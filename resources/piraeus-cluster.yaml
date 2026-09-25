@@ -1,66 +1,30 @@
-# The LINSTOR cluster itself. sync-wave 2: the operator and its CRDs are installed
-# in wave 0, and none of these kinds exist before that.
----
-apiVersion: piraeus.io/v1
-kind: LinstorCluster
+apiVersion: argoproj.io/v1alpha1
+kind: Application
 metadata:
-  name: linstorcluster
+  name: piraeus-cluster
+  # argocd, not the destination namespace: ArgoCD only reconciles Application
+  # objects in its own namespace unless application.namespaces is configured.
+  namespace: argocd
   annotations:
+    # After piraeus-operator, whose CRDs these resources need.
     argocd.argoproj.io/sync-wave: "2"
-    # The CRD does not exist while wave 0 is still installing the operator, and a
-    # dry run against an unknown kind fails the whole sync -- including the
-    # unrelated resources next to it.
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
-  # Storage lives on the netsvc nodes only. The backbone SBCs run their root
-  # filesystem over a USB-SATA bridge -- replicating onto that would inherit
-  # exactly the stalls that already cost this cluster two outages.
-  nodeSelector:
-    node-role.kubernetes.io/storage: ""
----
-apiVersion: piraeus.io/v1
-kind: LinstorSatelliteConfiguration
-metadata:
-  name: storage-pool
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-    # The CRD does not exist while wave 0 is still installing the operator, and a
-    # dry run against an unknown kind fails the whole sync -- including the
-    # unrelated resources next to it.
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-spec:
-  # Only the nodes with the loop-mounted pool image. The tiebreaker also runs a
-  # satellite, but must not get a pool -- without the mount the directory would
-  # land on its root filesystem.
-  nodeSelector:
-    node-role.kubernetes.io/storage-disk: ""
-  storagePools:
-    - name: pool1
-      # FILE_THIN: volumes are sparse files under this directory, which Ansible
-      # loop-mounts from a 300G image so the pool cannot fill the root filesystem.
-      fileThinPool:
-        directory: /var/lib/linstor-pools/pool1
----
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: linstor-replicated
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-    # The CRD does not exist while wave 0 is still installing the operator, and a
-    # dry run against an unknown kind fails the whole sync -- including the
-    # unrelated resources next to it.
-    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
-    storageclass.kubernetes.io/is-default-class: "true"
-provisioner: linstor.csi.linbit.com
-allowVolumeExpansion: true
-# WaitForFirstConsumer, so LINSTOR places the replicas after the scheduler picked a
-# node -- with Immediate a pod can land where no replica is and read over the network.
-volumeBindingMode: WaitForFirstConsumer
-reclaimPolicy: Delete
-parameters:
-  linstor.csi.linbit.com/storagePool: pool1
-  # Two data replicas. The quorum's third vote comes from a diskless tiebreaker,
-  # which LINSTOR places on its own on a satellite without a pool -- backbone-1.
-  linstor.csi.linbit.com/placementCount: "2"
-  linstor.csi.linbit.com/allowRemoteVolumeAccess: "true"
+  project: default
+  source:
+    repoURL: https://github.com/tak2004/home-ops-apps.git
+    targetRevision: main
+    path: piraeus
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: piraeus-datastore
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # The operator needs a moment to register its CRDs. Without a retry the first
+    # sync fails for good and the cluster is never created.
+    retry:
+      limit: 10
+      backoff:
+        duration: 20s
+        maxDuration: 5m
