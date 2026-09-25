@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: piraeus-operator
+  # argocd, not the destination namespace: ArgoCD only reconciles Application
+  # objects in its own namespace unless application.namespaces is configured.
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # Piraeus ships as a kustomize overlay, not a Helm chart.
+    repoURL: https://github.com/piraeusdatastore/piraeus-operator
+    targetRevision: v2.12.0
+    path: config/default
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: piraeus-datastore
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The CRDs carry descriptions long enough to blow the 262144-byte annotation
+      # limit that a client-side apply writes into last-applied-configuration.
+      - ServerSideApply=true
