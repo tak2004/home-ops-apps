@@ -13,6 +13,19 @@ spec:
   nodeSelector:
     node-role.kubernetes.io/storage: ""
 ---
+# Without host networking the satellite configures DRBD inside the pod's network
+# namespace, where the storage link does not exist -- the connection between the
+# two storage nodes stays in Connecting forever while the one to the tiebreaker,
+# which uses pod addresses, comes up fine.
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: host-network
+spec:
+  podTemplate:
+    spec:
+      hostNetwork: true
+---
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
