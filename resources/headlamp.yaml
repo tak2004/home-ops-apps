@@ -21,11 +21,18 @@ spec:
         ingress:
           enabled: true
           ingressClassName: cilium
+          annotations:
+            # cert-manager issues the certificate from the private home-ca.
+            cert-manager.io/cluster-issuer: home-ca
           hosts:
             - host: headlamp.svc.home
               paths:
                 - path: /
                   type: Prefix
+          tls:
+            - secretName: headlamp-tls
+              hosts:
+                - headlamp.svc.home
   destination:
     server: "https://kubernetes.default.svc"
     namespace: headlamp
