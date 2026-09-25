@@ -48,3 +48,20 @@ parameters:
   # which LINSTOR places on its own on a satellite without a pool -- backbone-1.
   linstor.csi.linbit.com/placementCount: "2"
   linstor.csi.linbit.com/allowRemoteVolumeAccess: "true"
+---
+# Without this DRBD replicates over whichever address LINSTOR registered for the
+# node -- the 1G home network. The selector limits the connection to the two nodes
+# carrying a pool: the tiebreaker has no storage link, and a path naming an
+# interface it does not have would never be configured.
+apiVersion: piraeus.io/v1
+kind: LinstorNodeConnection
+metadata:
+  name: replication-link
+spec:
+  selector:
+    - matchLabels:
+        - key: node-role.kubernetes.io/storage-disk
+          op: Exists
+  paths:
+    - name: storage-link
+      interface: replication
