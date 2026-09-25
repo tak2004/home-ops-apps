@@ -7,6 +7,10 @@ metadata:
   name: linstorcluster
   annotations:
     argocd.argoproj.io/sync-wave: "2"
+    # The CRD does not exist while wave 0 is still installing the operator, and a
+    # dry run against an unknown kind fails the whole sync -- including the
+    # unrelated resources next to it.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   # Storage lives on the netsvc nodes only. The backbone SBCs run their root
   # filesystem over a USB-SATA bridge -- replicating onto that would inherit
@@ -20,6 +24,10 @@ metadata:
   name: storage-pool
   annotations:
     argocd.argoproj.io/sync-wave: "2"
+    # The CRD does not exist while wave 0 is still installing the operator, and a
+    # dry run against an unknown kind fails the whole sync -- including the
+    # unrelated resources next to it.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
 spec:
   # Only the nodes with the loop-mounted pool image. The tiebreaker also runs a
   # satellite, but must not get a pool -- without the mount the directory would
@@ -39,6 +47,10 @@ metadata:
   name: linstor-replicated
   annotations:
     argocd.argoproj.io/sync-wave: "2"
+    # The CRD does not exist while wave 0 is still installing the operator, and a
+    # dry run against an unknown kind fails the whole sync -- including the
+    # unrelated resources next to it.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
     storageclass.kubernetes.io/is-default-class: "true"
 provisioner: linstor.csi.linbit.com
 allowVolumeExpansion: true
