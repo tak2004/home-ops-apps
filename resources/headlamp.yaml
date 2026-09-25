@@ -13,11 +13,19 @@ spec:
     targetRevision: 0.45.0
     helm:
       valuesObject:
-        # LoadBalancer instead of Ingress: the Cilium ingress path is currently
-        # broken (Envoy never receives service backends), while LoadBalancer IPs
-        # from the 192.168.1.20-29 pool work fine.
+        # Reached through the shared cilium-ingress, which the *.svc.home wildcard
+        # in bind9 resolves to. No dedicated LoadBalancer IP and no DNS record of
+        # its own are needed.
         service:
-          type: LoadBalancer
+          type: ClusterIP
+        ingress:
+          enabled: true
+          ingressClassName: cilium
+          hosts:
+            - host: headlamp.svc.home
+              paths:
+                - path: /
+                  type: Prefix
   destination:
     server: "https://kubernetes.default.svc"
     namespace: headlamp
