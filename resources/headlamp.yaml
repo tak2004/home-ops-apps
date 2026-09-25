@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: headlamp
+  # argocd, nicht der Ziel-Namespace: ArgoCD verarbeitet Application-Objekte nur im
+  # eigenen Namespace, solange application.namespaces nicht gesetzt ist.
+  namespace: argocd
+spec:
+  project: default
+  source:
+    chart: headlamp
+    repoURL: https://kubernetes-sigs.github.io/headlamp/
+    targetRevision: 0.45.0
+    helm:
+      valuesObject:
+        # LoadBalancer statt Ingress: der Cilium-Ingress-Pfad ist defekt (Envoy
+        # bekommt keine Service-Backends), LoadBalancer-IPs aus dem Pool
+        # 192.168.1.20-29 funktionieren dagegen.
+        service:
+          type: LoadBalancer
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: headlamp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
