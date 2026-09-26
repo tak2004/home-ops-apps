@@ -100,6 +100,14 @@ apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
   name: storage-pool-fast-netsvc-1
+  annotations:
+    # Both the pool type here and StorageClass parameters below are immutable:
+    # Kubernetes rejects "updates to parameters are forbidden", and the piraeus
+    # admission webhook rejects "Cannot change storage pool type". Argo patches by
+    # default and the sync fails; Replace deletes and recreates instead. Safe here
+    # because a storage pool definition holds no data -- the volume group on the
+    # host outlives it.
+    argocd.argoproj.io/sync-options: Replace=true
 spec:
   nodeSelector:
     kubernetes.io/hostname: netsvc-1
@@ -115,6 +123,14 @@ apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
   name: storage-pool-fast-netsvc-2
+  annotations:
+    # Both the pool type here and StorageClass parameters below are immutable:
+    # Kubernetes rejects "updates to parameters are forbidden", and the piraeus
+    # admission webhook rejects "Cannot change storage pool type". Argo patches by
+    # default and the sync fails; Replace deletes and recreates instead. Safe here
+    # because a storage pool definition holds no data -- the volume group on the
+    # host outlives it.
+    argocd.argoproj.io/sync-options: Replace=true
 spec:
   nodeSelector:
     kubernetes.io/hostname: netsvc-2
@@ -138,6 +154,8 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: linstor-fast
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
 provisioner: linstor.csi.linbit.com
 allowVolumeExpansion: true
 volumeBindingMode: WaitForFirstConsumer
