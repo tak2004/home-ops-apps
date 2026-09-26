@@ -1,0 +1,111 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homepage
+  # argocd, not the destination namespace: ArgoCD only reconciles Application
+  # objects in its own namespace unless application.namespaces is configured.
+  namespace: argocd
+spec:
+  project: default
+  source:
+    chart: homepage
+    # The chart is community-maintained; gethomepage publishes no official one.
+    repoURL: https://jameswynn.github.io/helm-charts
+    targetRevision: 2.1.0
+    helm:
+      valuesObject:
+        # The point of this dashboard: it reads the cluster's ingresses itself and
+        # sorts them by annotation, so a new service needs four lines on its own
+        # ingress and nothing central. Requires RBAC and mode: cluster.
+        enableRbac: true
+        serviceAccount:
+          create: true
+
+        env:
+          # Mandatory since Homepage 1.0. Without the host it is served under in
+          # this list, every request fails with "Host validation failed" and the
+          # page stays blank -- the single most common way to get this wrong.
+          - name: HOMEPAGE_ALLOWED_HOSTS
+            value: home.svc.home
+          - name: TZ
+            value: Europe/Berlin
+
+        ingress:
+          main:
+            enabled: true
+            ingressClassName: cilium
+            annotations:
+              cert-manager.io/cluster-issuer: home-ca
+            hosts:
+              - host: &host home.svc.home
+                paths:
+                  - path: /
+                    pathType: Prefix
+            tls:
+              - secretName: homepage-tls
+                hosts:
+                  - *host
+
+        config:
+          kubernetes:
+            mode: cluster
+
+          # Only for what has no ingress and therefore cannot be discovered. The
+          # BMCs are reachable by name because the Fritzbox resolves them; their
+          # addresses are DHCP reservations, so the names outlive the leases.
+          services:
+            - Infrastruktur:
+                - Fritzbox:
+                    href: http://fritz.box/
+                    description: Router, DHCP und DNS
+                    icon: fritzbox.svg
+                - netsvc-1 BMC:
+                    href: https://netsvc-1-bmc/
+                    description: IPMI, Remote-Konsole
+                    icon: mdi-server-network
+                - netsvc-2 BMC:
+                    href: https://netsvc-2-bmc/
+                    description: IPMI, Remote-Konsole
+                    icon: mdi-server-network
+
+          widgets:
+            - kubernetes:
+                cluster:
+                  show: true
+                  cpu: true
+                  memory: true
+                  showLabel: true
+                  label: home-ops
+                nodes:
+                  show: true
+                  cpu: true
+                  memory: true
+                  showLabel: true
+            - search:
+                provider: duckduckgo
+                target: _blank
+
+          bookmarks: []
+
+          # A string, not a map: Helm's toYaml sorts keys, which would scramble the
+          # group order. The layout block also fixes which groups appear first --
+          # groups discovered from ingress annotations slot into these names.
+          settingsString: |
+            title: home-ops
+            headerStyle: boxed
+            layout:
+              Cluster:
+                style: row
+                columns: 3
+              Infrastruktur:
+                style: row
+                columns: 3
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: homepage
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
