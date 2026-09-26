@@ -26,11 +26,15 @@ spec:
     spec:
       hostNetwork: true
 ---
-# pool1 is being converted from FILE_THIN to thick LVM, one node at a time, so it
-# is pinned per host instead of matched by the storage-disk label. netsvc-1 has no
-# pool1 for the duration: its NVMe root partition has to be shrunk offline before
-# there is room for a physical volume, and that leaves the node without pool1 until
-# the new one exists. Nothing depends on it -- the cluster holds no claims.
+# netsvc-2 has no pool1 while its NVMe is converted the same way netsvc-1 was:
+# root shrunk offline, the freed space handed to LVM. It comes back as thick LVM
+# once the volume group exists. Nothing depends on the gap -- the cluster holds no
+# claims.
+#
+# Its pool will get the same 315.3 GiB as netsvc-1, not everything that is free.
+# This NVMe is twice the size, but replication is bounded by the smaller side: a
+# surplus here could only ever hold single-replica volumes, and there is no use for
+# those. The extra space stays with the root filesystem.
 # netsvc-1's pool1, now thick LVM on the NVMe. Its root partition was shrunk from
 # 464 to 150 GiB offline to make room for this physical volume; 18 GiB are in use,
 # so the remaining headroom is eightfold.
@@ -60,19 +64,6 @@ spec:
       lvmPool:
         volumeGroup: linstornvme
 ---
-apiVersion: piraeus.io/v1
-kind: LinstorSatelliteConfiguration
-metadata:
-  name: storage-pool-netsvc-2
-spec:
-  nodeSelector:
-    kubernetes.io/hostname: netsvc-2
-  storagePools:
-    - name: pool1
-      # FILE_THIN: volumes are sparse files under this directory, which Ansible
-      # loop-mounts from a 300G image so the pool cannot fill the root filesystem.
-      fileThinPool:
-        directory: /var/lib/linstor-pools/pool1
 ---
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
