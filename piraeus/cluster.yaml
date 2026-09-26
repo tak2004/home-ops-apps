@@ -78,3 +78,87 @@ spec:
   paths:
     - name: storage-link
       interface: replication
+---
+# A second pool, on the SATA SSD each netsvc node carries. Measured on netsvc-1's
+# drive, same disk, same fio geometry, only the layering differs:
+#
+#   raw device                                  1315 commits/s (QD1)
+#   LVM thin, warmed                             350
+#   ext4 -> image -> loop -> ext4 (like pool1)    72 ... 214, and it scatters
+#
+# So the win is not thin provisioning -- LVM thick measured 361, indistinguishable
+# from thin -- it is dropping the loop device and the second ext4. A freshly created
+# thin volume is slow (112 commits/s) until its chunks are allocated once; that cost
+# is paid per volume, not per write.
+#
+# Per node instead of one selector-matched object: the two nodes hold different
+# drives, so the by-id paths differ. Naming the device explicitly also makes it
+# visible which physical disk a node hands to LINSTOR -- /dev/sda would work today
+# (the FCH exposes exactly one SATA port) but stops being unambiguous the moment
+# SL_SAS is switched from PCIe to its four SATA lanes.
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: storage-pool-fast-netsvc-1
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: netsvc-1
+  storagePools:
+    - name: pool2
+      source:
+        hostDevices:
+          - /dev/disk/by-id/ata-Samsung_SSD_850_EVO_250GB_S2R6NX0H624228J
+      lvmThinPool:
+        volumeGroup: linstorvg
+        thinPool: thinpool
+---
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: storage-pool-fast-netsvc-2
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: netsvc-2
+  storagePools:
+    - name: pool2
+      source:
+        hostDevices:
+          - /dev/disk/by-id/ata-SAMSUNG_SSD_830_Series_S0VZNEAC807268
+      lvmThinPool:
+        volumeGroup: linstorvg
+        thinPool: thinpool
+---
+# For everything that calls fsync: databases, etcd, registry metadata. Small writes
+# where commit latency decides, not bandwidth -- a 4K commit does not care that SATA
+# caps at 550 MB/s. linstor-replicated stays on pool1, which has the NVMe behind it
+# and wins on sequential throughput by a factor of four.
+#
+# Neither drive has power-loss protection, so this is not the end state: both are
+# consumer SSDs that must flush to NAND on every barrier. It is the free half of the
+# improvement, taken while flash prices are inflated.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: linstor-fast
+provisioner: linstor.csi.linbit.com
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+parameters:
+  linstor.csi.linbit.com/storagePool: pool2
+  linstor.csi.linbit.com/placementCount: "2"
+  linstor.csi.linbit.com/allowRemoteVolumeAccess: "true"
+---
+# Was applied by hand with kubectl and existed only in the cluster, not here. One
+# replica, no redundancy -- for scratch data that can be recreated, and for measuring
+# the replication overhead against linstor-replicated.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: linstor-single
+provisioner: linstor.csi.linbit.com
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+parameters:
+  linstor.csi.linbit.com/storagePool: pool1
+  linstor.csi.linbit.com/placementCount: "1"
