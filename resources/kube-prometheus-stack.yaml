@@ -1,0 +1,138 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  # argocd, not the destination namespace: ArgoCD only reconciles Application
+  # objects in its own namespace unless application.namespaces is configured.
+  namespace: argocd
+spec:
+  project: default
+  source:
+    chart: kube-prometheus-stack
+    repoURL: https://prometheus-community.github.io/helm-charts
+    targetRevision: 91.7.0
+    helm:
+      valuesObject:
+        # Everything heavy onto the netsvc nodes. They carry 64 GB each and idle at
+        # two to five percent, while backbone-1 has 7.8 GB and sits at half. The two
+        # SBCs have 1.9 GB and a control-plane taint, so nothing lands there anyway.
+        # storage-disk is the label only the netsvc nodes carry -- backbone-1 also
+        # has "storage", because it is the diskless DRBD tiebreaker.
+        prometheus:
+          prometheusSpec:
+            retention: 30d
+            nodeSelector:
+              node-role.kubernetes.io/storage-disk: ""
+            resources:
+              requests:
+                cpu: 200m
+                memory: 1Gi
+              limits:
+                memory: 4Gi
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: linstor-replicated
+                  accessModes: [ReadWriteOnce]
+                  resources:
+                    requests:
+                      storage: 50Gi
+            # Without this the operator only picks up ServiceMonitors carrying the
+            # release label, which silently ignores anything created by other charts.
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+          ingress:
+            enabled: true
+            ingressClassName: cilium
+            annotations:
+              cert-manager.io/cluster-issuer: home-ca
+              gethomepage.dev/enabled: "true"
+              gethomepage.dev/name: "Prometheus"
+              gethomepage.dev/group: "Monitoring"
+              gethomepage.dev/icon: prometheus.svg
+              gethomepage.dev/description: "Metriken und Abfragen"
+            hosts:
+              - prometheus.svc.home
+            paths: ["/"]
+            pathType: Prefix
+            tls:
+              - secretName: prometheus-tls
+                hosts: [prometheus.svc.home]
+
+        grafana:
+          nodeSelector:
+            node-role.kubernetes.io/storage-disk: ""
+          persistence:
+            enabled: true
+            storageClassName: linstor-replicated
+            size: 5Gi
+          # NOTE: this is the chart's documented default password. It is reachable to
+          # anyone on the home network. Replace it with a SealedSecret and point
+          # grafana.admin.existingSecret at it -- the repo already runs sealed-secrets.
+          adminPassword: prom-operator
+          ingress:
+            enabled: true
+            ingressClassName: cilium
+            annotations:
+              cert-manager.io/cluster-issuer: home-ca
+              gethomepage.dev/enabled: "true"
+              gethomepage.dev/name: "Grafana"
+              gethomepage.dev/group: "Monitoring"
+              gethomepage.dev/icon: grafana.svg
+              gethomepage.dev/description: "Dashboards"
+            hosts:
+              - grafana.svc.home
+            path: /
+            pathType: Prefix
+            tls:
+              - secretName: grafana-tls
+                hosts: [grafana.svc.home]
+
+        alertmanager:
+          alertmanagerSpec:
+            nodeSelector:
+              node-role.kubernetes.io/storage-disk: ""
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: linstor-replicated
+                  accessModes: [ReadWriteOnce]
+                  resources:
+                    requests:
+                      storage: 2Gi
+          # No ingress: no alert routes are configured, so the UI would show an empty
+          # page. Reachable through port-forward when that changes.
+          ingress:
+            enabled: false
+
+        prometheusOperator:
+          nodeSelector:
+            node-role.kubernetes.io/storage-disk: ""
+
+        # kubeadm binds both of these to 127.0.0.1, so their ServiceMonitors would
+        # never connect and the targets page would stay permanently red. Enabling them
+        # means changing --bind-address on all three control-plane nodes, which is a
+        # separate decision -- their metrics are rarely actionable in a homelab.
+        kubeScheduler:
+          enabled: false
+        kubeControllerManager:
+          enabled: false
+        # Same story plus client certificates.
+        kubeEtcd:
+          enabled: false
+        # Cilium replaces kube-proxy here, so there is nothing to scrape.
+        kubeProxy:
+          enabled: false
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The chart ships the Prometheus Operator CRDs, which exceed the annotation
+      # size limit that kubectl apply uses to store its last-applied state.
+      - ServerSideApply=true
