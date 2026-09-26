@@ -86,6 +86,8 @@ metadata:
   name: linstor-replicated
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
+    # The parameters below are immutable, so Argo has to replace, not patch.
+    argocd.argoproj.io/sync-options: Replace=true
 provisioner: linstor.csi.linbit.com
 allowVolumeExpansion: true
 # WaitForFirstConsumer, so LINSTOR places the replicas after the scheduler picked a
@@ -97,7 +99,11 @@ parameters:
   # Two data replicas. The quorum's third vote comes from a diskless tiebreaker,
   # which LINSTOR places on its own on a satellite without a pool -- backbone-1.
   linstor.csi.linbit.com/placementCount: "2"
-  linstor.csi.linbit.com/allowRemoteVolumeAccess: "true"
+  # false, per LINBIT: the scheduler then has to place the pod where a replica
+  # already is, instead of reaching across the network for every I/O. The cost
+  # is scheduling freedom -- only netsvc-1 and netsvc-2 hold replicas, so a pod
+  # using this class can no longer land on backbone-1, which is schedulable.
+  linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"
 ---
 # Without this DRBD replicates over whichever address LINSTOR registered for the
 # node -- the 1G home network. The selector limits the connection to the two nodes
