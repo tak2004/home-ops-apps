@@ -20,15 +20,20 @@ spec:
         # has "storage", because it is the diskless DRBD tiebreaker.
         prometheus:
           prometheusSpec:
-            retention: 30d
+            retention: 7d
+            # Below the volume size on purpose. Retention alone is a time limit, not
+            # a size limit: an unexpected burst of series fills the disk, and a
+            # Prometheus whose volume is full stops ingesting and needs manual
+            # repair. With both set it prunes before that happens.
+            retentionSize: 8GB
             nodeSelector:
               node-role.kubernetes.io/storage-disk: ""
             resources:
               requests:
                 cpu: 200m
-                memory: 1Gi
+                memory: 512Mi
               limits:
-                memory: 4Gi
+                memory: 1536Mi
             storageSpec:
               volumeClaimTemplate:
                 spec:
@@ -36,7 +41,7 @@ spec:
                   accessModes: [ReadWriteOnce]
                   resources:
                     requests:
-                      storage: 50Gi
+                      storage: 10Gi
             # Without this the operator only picks up ServiceMonitors carrying the
             # release label, which silently ignores anything created by other charts.
             serviceMonitorSelectorNilUsesHelmValues: false
@@ -63,14 +68,39 @@ spec:
         grafana:
           nodeSelector:
             node-role.kubernetes.io/storage-disk: ""
+          # No volume. Grafana keeps users, preferences and UI-created dashboards in
+          # a SQLite file; without persistence those are gone on every restart. That
+          # is acceptable precisely because everything below arrives through the
+          # sidecars instead -- a dashboard clicked together in the browser is not
+          # supposed to survive here, it is supposed to become a ConfigMap.
           persistence:
-            enabled: true
-            storageClassName: linstor-replicated
-            size: 5Gi
+            enabled: false
           # NOTE: this is the chart's documented default password. It is reachable to
           # anyone on the home network. Replace it with a SealedSecret and point
           # grafana.admin.existingSecret at it -- the repo already runs sealed-secrets.
           adminPassword: prom-operator
+          sidecar:
+            # searchNamespace: ALL is the part that matters. By default each sidecar
+            # only watches its own namespace, so a dashboard shipped next to the
+            # application it describes would never be found. With ALL, any namespace
+            # can carry a labelled ConfigMap and it shows up here.
+            dashboards:
+              enabled: true
+              label: grafana_dashboard
+              labelValue: "1"
+              searchNamespace: ALL
+              folderAnnotation: grafana_folder
+              provider:
+                # Without this every dashboard lands in one flat folder.
+                foldersFromFilesStructure: true
+            datasources:
+              enabled: true
+              searchNamespace: ALL
+              defaultDatasourceEnabled: true
+            alerts:
+              enabled: true
+              label: grafana_alert
+              searchNamespace: ALL
           ingress:
             enabled: true
             ingressClassName: cilium
@@ -93,18 +123,47 @@ spec:
           alertmanagerSpec:
             nodeSelector:
               node-role.kubernetes.io/storage-disk: ""
-            storage:
-              volumeClaimTemplate:
-                spec:
-                  storageClassName: linstor-replicated
-                  accessModes: [ReadWriteOnce]
-                  resources:
-                    requests:
-                      storage: 2Gi
-          # No ingress: no alert routes are configured, so the UI would show an empty
-          # page. Reachable through port-forward when that changes.
+            # Alertmanager has no sidecar; the operator is the equivalent. An empty
+            # selector makes it watch AlertmanagerConfig resources in every
+            # namespace, so routes and receivers are custom resources next to what
+            # they alert on instead of one block of config in these values.
+            alertmanagerConfigSelector: {}
+            alertmanagerConfigNamespaceSelector: {}
+          # No volume: the only state is silences and notification history, and with
+          # no routes configured there is nothing to lose. No ingress for the same
+          # reason -- the UI would be an empty page.
           ingress:
             enabled: false
+
+        # The only DaemonSet this chart brings. Its default toleration is
+        # "operator: Exists" on NoSchedule, which puts it on the two SBCs as well --
+        # and those are meant to carry the control plane and nothing else. Emptying
+        # the list keeps it on the untainted nodes: backbone-1 and both netsvc.
+        #
+        # The cost is real: backbone-2 and backbone-3 sit at 64 and 79 percent
+        # memory, so they are exactly the nodes whose host metrics would be worth
+        # having. Re-add a control-plane toleration here if that visibility is
+        # wanted back -- the agent itself needs about 25 MB.
+        prometheus-node-exporter:
+          tolerations: []
+          resources:
+            requests:
+              cpu: 20m
+              memory: 24Mi
+            limits:
+              memory: 64Mi
+
+        # A Deployment, not a DaemonSet, but it has no node preference of its own
+        # and would otherwise be free to land on backbone-1.
+        kube-state-metrics:
+          nodeSelector:
+            node-role.kubernetes.io/storage-disk: ""
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
 
         prometheusOperator:
           nodeSelector:
