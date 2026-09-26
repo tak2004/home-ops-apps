@@ -26,15 +26,14 @@ spec:
     spec:
       hostNetwork: true
 ---
-# netsvc-2 has no pool1 while its NVMe is converted the same way netsvc-1 was:
-# root shrunk offline, the freed space handed to LVM. It comes back as thick LVM
-# once the volume group exists. Nothing depends on the gap -- the cluster holds no
-# claims.
+# Both nodes now run pool1 as thick LVM on their NVMe, which is what
+# linstor-replicated needed all along -- until today it was a sparse file on a loop
+# device on the root filesystem.
 #
-# Its pool will get the same 315.3 GiB as netsvc-1, not everything that is free.
-# This NVMe is twice the size, but replication is bounded by the smaller side: a
-# surplus here could only ever hold single-replica volumes, and there is no use for
-# those. The extra space stays with the root filesystem.
+# netsvc-2's NVMe is twice the size, but its pool is deliberately the same 315.3
+# GiB as netsvc-1's: replication is bounded by the smaller side, so a surplus here
+# could only ever hold single-replica volumes. The extra 465 GiB stays with the
+# root filesystem, where it is generically useful.
 # netsvc-1's pool1, now thick LVM on the NVMe. Its root partition was shrunk from
 # 464 to 150 GiB offline to make room for this physical volume; 18 GiB are in use,
 # so the remaining headroom is eightfold.
@@ -64,6 +63,22 @@ spec:
       lvmPool:
         volumeGroup: linstornvme
 ---
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: storage-pool-netsvc-2
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: netsvc-2
+  storagePools:
+    - name: pool1
+      source:
+        hostDevices:
+          - /dev/disk/by-id/nvme-CT1000P3SSD8_235245ECC828-part3
+      lvmPool:
+        volumeGroup: linstornvme
 ---
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
