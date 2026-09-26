@@ -79,23 +79,23 @@ spec:
     - name: storage-link
       interface: replication
 ---
-# A second pool, on the SATA SSD each netsvc node carries. Measured on netsvc-1's
-# drive, same disk, same fio geometry, only the layering differs:
-#
-#   raw device                                  1315 commits/s (QD1)
-#   LVM thin, warmed                             350
-#   ext4 -> image -> loop -> ext4 (like pool1)    72 ... 214, and it scatters
-#
-# So the win is not thin provisioning -- LVM thick measured 361, indistinguishable
-# from thin -- it is dropping the loop device and the second ext4. A freshly created
-# thin volume is slow (112 commits/s) until its chunks are allocated once; that cost
-# is paid per volume, not per write.
+# A second pool, on the SATA SSD each netsvc node carries. Thick LVM, not thin:
+# LINBIT measures 3093 IOPS for thick against 1650 for thin under synchronous
+# replication, because thin allocates blocks on first write and that allocation is
+# extra I/O on exactly the small-write path this pool exists for. The cost is that
+# thick cannot snapshot. Their back-end comparison does not list FILE_THIN at all,
+# which is what pool1 still uses.
 #
 # Per node instead of one selector-matched object: the two nodes hold different
 # drives, so the by-id paths differ. Naming the device explicitly also makes it
 # visible which physical disk a node hands to LINSTOR -- /dev/sda would work today
 # (the FCH exposes exactly one SATA port) but stops being unambiguous the moment
 # SL_SAS is switched from PCIe to its four SATA lanes.
+#
+# Do not read the earlier host-level fio numbers as a prediction for this pool.
+# Measured on the bare device, dropping the loop stack looked like a 2-5x win;
+# measured through a real PVC, the same change came out slower than pool1. That gap
+# is unexplained, so this pool is deployed but unproven.
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
@@ -108,9 +108,8 @@ spec:
       source:
         hostDevices:
           - /dev/disk/by-id/ata-Samsung_SSD_850_EVO_250GB_S2R6NX0H624228J
-      lvmThinPool:
+      lvmPool:
         volumeGroup: linstorvg
-        thinPool: thinpool
 ---
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
@@ -124,9 +123,8 @@ spec:
       source:
         hostDevices:
           - /dev/disk/by-id/ata-SAMSUNG_SSD_830_Series_S0VZNEAC807268
-      lvmThinPool:
+      lvmPool:
         volumeGroup: linstorvg
-        thinPool: thinpool
 ---
 # For everything that calls fsync: databases, etcd, registry metadata. Small writes
 # where commit latency decides, not bandwidth -- a 4K commit does not care that SATA
@@ -147,7 +145,10 @@ reclaimPolicy: Delete
 parameters:
   linstor.csi.linbit.com/storagePool: pool2
   linstor.csi.linbit.com/placementCount: "2"
-  linstor.csi.linbit.com/allowRemoteVolumeAccess: "true"
+  # LINBIT recommends false: it forces the scheduler to place the pod where a
+  # replica already is, instead of letting it reach across the network for every
+  # I/O. Both netsvc nodes carry pool2, so this costs no scheduling freedom here.
+  linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"
 ---
 # Was applied by hand with kubectl and existed only in the cluster, not here. One
 # replica, no redundancy -- for scratch data that can be recreated, and for measuring
