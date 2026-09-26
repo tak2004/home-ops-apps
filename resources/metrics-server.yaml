@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  # argocd, not the destination namespace: ArgoCD only reconciles Application
+  # objects in its own namespace unless application.namespaces is configured.
+  namespace: argocd
+spec:
+  project: default
+  source:
+    chart: metrics-server
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    targetRevision: 3.14.0
+    helm:
+      valuesObject:
+        # The kubelets serve TLS with /var/lib/kubelet/pki/kubelet.crt, a
+        # self-signed certificate written at install time and not issued by the
+        # cluster CA -- kubeadm only sets rotateCertificates, which covers the
+        # client certificate, not the serving one. metrics-server therefore cannot
+        # verify what it scrapes and refuses to start without this flag.
+        #
+        # The traffic stays encrypted; what is given up is the kubelet's identity,
+        # so a man in the middle on the pod-to-kubelet path inside the cluster
+        # network would go unnoticed.
+        #
+        # The clean alternative is serverTLSBootstrap: true in the kubelet config
+        # on every node, which makes kubelets request a serving certificate from
+        # the cluster CA. Those CSRs are not auto-approved: without an approver
+        # controller they have to be signed by hand, again after every rotation.
+        # That is the reason this is a flag and not a fix.
+        args:
+          - --kubelet-insecure-tls
+  destination:
+    server: "https://kubernetes.default.svc"
+    # kube-system, unlike the other applications here: metrics-server registers an
+    # APIService for metrics.k8s.io, and every guide, kubectl top and HPA example
+    # assumes it lives beside the other control-plane add-ons.
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
