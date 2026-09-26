@@ -31,6 +31,35 @@ spec:
 # pool1 for the duration: its NVMe root partition has to be shrunk offline before
 # there is room for a physical volume, and that leaves the node without pool1 until
 # the new one exists. Nothing depends on it -- the cluster holds no claims.
+# netsvc-1's pool1, now thick LVM on the NVMe. Its root partition was shrunk from
+# 464 to 150 GiB offline to make room for this physical volume; 18 GiB are in use,
+# so the remaining headroom is eightfold.
+#
+# This is what the whole conversion was for: pool1 and pool2 now differ in exactly
+# one thing on this node -- pool1 sits on the NVMe, pool2 on a SATA SSD, both thick
+# LVM, both under the same DRBD tuning. Every earlier comparison varied medium and
+# backend together and could not separate them.
+#
+# netsvc-2 still runs pool1 as FILE_THIN, so replicated volumes on pool1 are mixed
+# backend until that node is converted too. Single-replica volumes pinned to
+# netsvc-1 are the clean measurement in the meantime.
+apiVersion: piraeus.io/v1
+kind: LinstorSatelliteConfiguration
+metadata:
+  name: storage-pool-netsvc-1
+  annotations:
+    argocd.argoproj.io/sync-options: Replace=true
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: netsvc-1
+  storagePools:
+    - name: pool1
+      source:
+        hostDevices:
+          - /dev/disk/by-id/nvme-CT500P3SSD8_241347E7F7A2-part3
+      lvmPool:
+        volumeGroup: linstornvme
+---
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
