@@ -26,16 +26,18 @@ spec:
     spec:
       hostNetwork: true
 ---
+# pool1 is being converted from FILE_THIN to thick LVM, one node at a time, so it
+# is pinned per host instead of matched by the storage-disk label. netsvc-1 has no
+# pool1 for the duration: its NVMe root partition has to be shrunk offline before
+# there is room for a physical volume, and that leaves the node without pool1 until
+# the new one exists. Nothing depends on it -- the cluster holds no claims.
 apiVersion: piraeus.io/v1
 kind: LinstorSatelliteConfiguration
 metadata:
-  name: storage-pool
+  name: storage-pool-netsvc-2
 spec:
-  # Only the nodes with the loop-mounted pool image. The tiebreaker also runs a
-  # satellite, but must not get a pool -- without the mount the directory would
-  # land on its root filesystem.
   nodeSelector:
-    node-role.kubernetes.io/storage-disk: ""
+    kubernetes.io/hostname: netsvc-2
   storagePools:
     - name: pool1
       # FILE_THIN: volumes are sparse files under this directory, which Ansible
