@@ -99,12 +99,21 @@ spec:
             # only watches its own namespace, so a dashboard shipped next to the
             # application it describes would never be found. With ALL, any namespace
             # can carry a labelled ConfigMap and it shows up here.
+            #
+            # HEALTH_PORT has to differ per sidecar. All three share the pod's
+            # network namespace and default to 8080, so the second and third die on
+            # bind with "OSError: [Errno 98] Address in use" -- and that exception
+            # kills the collector thread before it ever lists ConfigMaps. The
+            # container stays Running and ready, the target directory just stays
+            # empty: Grafana came up with no datasource and nothing looked broken.
             dashboards:
               enabled: true
               label: grafana_dashboard
               labelValue: "1"
               searchNamespace: ALL
               folderAnnotation: grafana_folder
+              env:
+                HEALTH_PORT: "8082"
               provider:
                 # Without this every dashboard lands in one flat folder.
                 foldersFromFilesStructure: true
@@ -112,10 +121,14 @@ spec:
               enabled: true
               searchNamespace: ALL
               defaultDatasourceEnabled: true
+              env:
+                HEALTH_PORT: "8083"
             alerts:
               enabled: true
               label: grafana_alert
               searchNamespace: ALL
+              env:
+                HEALTH_PORT: "8084"
           ingress:
             enabled: true
             ingressClassName: cilium
