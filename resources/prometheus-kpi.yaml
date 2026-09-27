@@ -144,6 +144,19 @@ spec:
   scrapeConfigNamespaceSelector: {}
   nodeSelector:
     node-role.kubernetes.io/storage-disk: ""
+  # Not inherited from anywhere: a bare Prometheus CR gets an empty pod security
+  # context, the freshly provisioned volume stays owned by root, and Prometheus --
+  # which runs as a non-root user -- dies on start with
+  # "open /prometheus/queries.active: permission denied". fsGroup is what makes the
+  # kubelet hand the volume to the process. Same values the chart writes for the
+  # fast instance.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 2000
+    fsGroup: 2000
+    seccompProfile:
+      type: RuntimeDefault
   resources:
     requests:
       cpu: 50m
