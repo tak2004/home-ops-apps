@@ -20,12 +20,15 @@ spec:
         # has "storage", because it is the diskless DRBD tiebreaker.
         prometheus:
           prometheusSpec:
-            retention: 7d
+            # 4h, not days: this is a single local replica now, so the window is
+            # what a node loss costs. Measured ingest is ~4100 samples/s, which
+            # puts 4h at roughly 150 MB -- the 5Gi below is mostly WAL headroom.
+            retention: 4h
             # Below the volume size on purpose. Retention alone is a time limit, not
             # a size limit: an unexpected burst of series fills the disk, and a
             # Prometheus whose volume is full stops ingesting and needs manual
             # repair. With both set it prunes before that happens.
-            retentionSize: 8GB
+            retentionSize: 3GB
             nodeSelector:
               node-role.kubernetes.io/storage-disk: ""
             resources:
@@ -37,11 +40,16 @@ spec:
             storageSpec:
               volumeClaimTemplate:
                 spec:
-                  storageClassName: linstor-replicated
+                  # Local, not replicated: Prometheus data is rebuildable by
+                  # re-scraping, so paying DRBD for it buys nothing. Measured write
+                  # load is ~42 KiB/s at effectively zero fsyncs -- this is about
+                  # not spending the replication link, not about speed. The cost is
+                  # that Prometheus cannot start while its one node is down.
+                  storageClassName: linstor-single
                   accessModes: [ReadWriteOnce]
                   resources:
                     requests:
-                      storage: 10Gi
+                      storage: 5Gi
             # Without this the operator only picks up ServiceMonitors carrying the
             # release label, which silently ignores anything created by other charts.
             serviceMonitorSelectorNilUsesHelmValues: false

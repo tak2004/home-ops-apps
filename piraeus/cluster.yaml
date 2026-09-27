@@ -218,9 +218,18 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: linstor-single
+  annotations:
+    # The parameters below are immutable, so Argo has to replace, not patch.
+    argocd.argoproj.io/sync-options: Replace=true
 provisioner: linstor.csi.linbit.com
+allowVolumeExpansion: true
 volumeBindingMode: WaitForFirstConsumer
 reclaimPolicy: Delete
 parameters:
   linstor.csi.linbit.com/storagePool: pool1
   linstor.csi.linbit.com/placementCount: "1"
+  # With a single replica this is what makes the volume genuinely local: the
+  # scheduler must place the pod on the node holding it, instead of attaching it
+  # diskless somewhere else and sending every read across the network. The price
+  # is that the pod cannot run at all while that one node is down.
+  linstor.csi.linbit.com/allowRemoteVolumeAccess: "false"
