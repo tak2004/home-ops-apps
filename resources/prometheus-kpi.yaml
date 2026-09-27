@@ -1,0 +1,209 @@
+# A second Prometheus for long-term KPIs, fed by the first one rather than by the
+# targets directly.
+#
+# The metrics wanted here -- node CPU, disk and network, pod CPU, network and disk --
+# are counters. Scraping a counter every 15 minutes loses every reset that happens
+# between two samples, and for pods a reset is not an edge case: it is every
+# container restart. The numbers would stay plausible and be quietly wrong.
+#
+# So the fast instance turns the counters into gauges with recording rules, at its
+# own 30s resolution where resets are handled correctly, and this instance federates
+# those gauges. A gauge can be sampled at any interval without losing anything. The
+# side effect is that ~121k series shrink to a few hundred before they are kept for
+# two weeks.
+#
+# sync-wave 3: after piraeus-cluster (2), which provides the StorageClass, and after
+# kube-prometheus-stack, whose operator reconciles these CRs and whose CRDs define
+# them.
+---
+# Recording rules. They carry no special label because the fast Prometheus runs with
+# ruleSelector {} over all namespaces -- it picks up any PrometheusRule in the
+# cluster. The level:metric:operation naming is the upstream convention.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kpi-recording-rules
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  groups:
+    - name: kpi.node
+      # 1m, not the 15m this data is later sampled at: these rules are evaluated by
+      # the fast Prometheus, and the whole point is that the rate is computed from
+      # dense samples. The 5m window then smooths over a single missed scrape.
+      interval: 1m
+      rules:
+        - record: node:cpu_utilisation:ratio
+          expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))
+        - record: node:memory_utilisation:ratio
+          expr: 1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes
+        # Real filesystems only. tmpfs and overlay would add a series per container
+        # mount and say nothing about the disk.
+        - record: node:filesystem_utilisation:ratio
+          expr: >-
+            1 - node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|ramfs|squashfs|overlay"}
+        - record: node:disk_read_bytes:rate5m
+          expr: sum by (instance) (rate(node_disk_read_bytes_total[5m]))
+        - record: node:disk_written_bytes:rate5m
+          expr: sum by (instance) (rate(node_disk_written_bytes_total[5m]))
+        # Physical interfaces only: lo doubles every local packet, and the veth/lxc
+        # pairs Cilium creates are per-pod and churn with every reschedule.
+        - record: node:network_receive_bytes:rate5m
+          expr: >-
+            sum by (instance) (rate(node_network_receive_bytes_total{device!~"lo|veth.*|lxc.*|cilium.*|docker.*"}[5m]))
+        - record: node:network_transmit_bytes:rate5m
+          expr: >-
+            sum by (instance) (rate(node_network_transmit_bytes_total{device!~"lo|veth.*|lxc.*|cilium.*|docker.*"}[5m]))
+    - name: kpi.pod
+      interval: 1m
+      rules:
+        # container!="" drops the cgroup rollup cAdvisor emits per pod, which would
+        # otherwise be summed on top of the containers it already contains.
+        - record: pod:cpu_usage:rate5m
+          expr: sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=""}[5m]))
+        - record: pod:memory_working_set:bytes
+          expr: sum by (namespace, pod) (container_memory_working_set_bytes{container!=""})
+        # No container filter here on purpose: network counters live on the pod
+        # sandbox, not on the individual containers.
+        - record: pod:network_receive_bytes:rate5m
+          expr: sum by (namespace, pod) (rate(container_network_receive_bytes_total[5m]))
+        - record: pod:network_transmit_bytes:rate5m
+          expr: sum by (namespace, pod) (rate(container_network_transmit_bytes_total[5m]))
+        - record: pod:fs_usage:bytes
+          expr: sum by (namespace, pod) (container_fs_usage_bytes{container!=""})
+---
+# No RoleBinding anywhere: this instance discovers nothing through the Kubernetes
+# API, it scrapes one static target. The operator still requires the account to
+# exist to put it on the pod.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-kpi
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+---
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: federate-fast-prometheus
+  namespace: monitoring
+  labels:
+    prometheus: kpi
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  staticConfigs:
+    - targets:
+        - kube-prometheus-stack-prometheus.monitoring.svc:9090
+  metricsPath: /federate
+  # Mandatory for federation. Without it Prometheus overwrites the instance and job
+  # labels that came with the federated series with those of the federation target,
+  # and every node would report itself as the Prometheus service.
+  honorLabels: true
+  params:
+    "match[]":
+      - '{__name__=~"node:.*"}'
+      - '{__name__=~"pod:.*"}'
+  scrapeInterval: 15m
+  # Federation of a few hundred series is a single fast request; 1m is a generous
+  # ceiling that still leaves the 15m interval untouched.
+  scrapeTimeout: 1m
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: kpi
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 1
+  serviceAccountName: prometheus-kpi
+  scrapeInterval: 15m
+  evaluationInterval: 15m
+  retention: 14d
+  # Far more than needed -- a few hundred series over 14 days is single-digit MB --
+  # but a size limit that can never be reached still beats none at all.
+  retentionSize: 1GB
+  # Prometheus only returns a series if it has a sample within lookback-delta of the
+  # query time, and the default is 5m. At a 15m interval every series would look
+  # absent two thirds of the time, including in every Grafana panel. This is the
+  # setting that makes a slow scrape usable at all.
+  additionalArgs:
+    - name: query.lookback-delta
+      value: 20m
+  # Only the ScrapeConfig above. An omitted selector selects nothing, unlike an
+  # empty one, which selects everything -- so serviceMonitorSelector and friends are
+  # deliberately absent: this instance must never discover the targets directly.
+  scrapeConfigSelector:
+    matchLabels:
+      prometheus: kpi
+  scrapeConfigNamespaceSelector: {}
+  nodeSelector:
+    node-role.kubernetes.io/storage-disk: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+  # Replicated, unlike the fast instance: this data cannot be rebuilt by
+  # re-scraping, so it is the one part of the monitoring stack worth paying DRBD
+  # for. Both netsvc nodes hold a replica, so the pod can still move between them.
+  storage:
+    volumeClaimTemplate:
+      spec:
+        storageClassName: linstor-replicated
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 2Gi
+---
+# The operator's own "prometheus-operated" service selects every Prometheus in the
+# namespace and would now load-balance across both instances. Grafana needs to reach
+# exactly this one.
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-kpi
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    app.kubernetes.io/name: prometheus
+    operator.prometheus.io/name: kpi
+  ports:
+    - name: http-web
+      port: 9090
+      targetPort: 9090
+---
+# Picked up by the grafana_datasource sidecar, same mechanism the chart uses for the
+# fast instance.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-kpi
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+data:
+  kpi-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: "Prometheus KPI"
+        type: prometheus
+        uid: prometheus-kpi
+        url: http://prometheus-kpi.monitoring:9090/
+        access: proxy
+        isDefault: false
+        jsonData:
+          httpMethod: POST
+          # Tells Grafana the smallest sensible step, so $__rate_interval and the
+          # auto step do not produce gaps on a 15m series.
+          timeInterval: 15m
