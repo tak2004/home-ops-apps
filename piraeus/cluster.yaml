@@ -86,8 +86,12 @@ metadata:
   name: linstor-replicated
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
-    # The parameters below are immutable, so Argo has to replace, not patch.
-    argocd.argoproj.io/sync-options: Replace=true
+    # Immutable parameters. Replace on its own is not enough: Argo then runs a
+    # kubectl replace, which is still an update and fails with "updates to
+    # parameters are forbidden". Force makes it delete and recreate. Deleting a
+    # StorageClass does not touch volumes already bound through it -- the name is
+    # only resolved when a new PVC is provisioned.
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
 provisioner: linstor.csi.linbit.com
 allowVolumeExpansion: true
 # WaitForFirstConsumer, so LINSTOR places the replicas after the scheduler picked a
@@ -198,7 +202,8 @@ kind: StorageClass
 metadata:
   name: linstor-fast
   annotations:
-    argocd.argoproj.io/sync-options: Replace=true
+    # Force, not just Replace -- see the comment on linstor-replicated above.
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
 provisioner: linstor.csi.linbit.com
 allowVolumeExpansion: true
 volumeBindingMode: WaitForFirstConsumer
@@ -219,8 +224,8 @@ kind: StorageClass
 metadata:
   name: linstor-single
   annotations:
-    # The parameters below are immutable, so Argo has to replace, not patch.
-    argocd.argoproj.io/sync-options: Replace=true
+    # Force, not just Replace -- see the comment on linstor-replicated above.
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
 provisioner: linstor.csi.linbit.com
 allowVolumeExpansion: true
 volumeBindingMode: WaitForFirstConsumer
