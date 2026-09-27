@@ -20,36 +20,43 @@ spec:
         # has "storage", because it is the diskless DRBD tiebreaker.
         prometheus:
           prometheusSpec:
-            # 4h, not days: this is a single local replica now, so the window is
-            # what a node loss costs. Measured ingest is ~4100 samples/s, which
-            # puts 4h at roughly 150 MB -- the 5Gi below is mostly WAL headroom.
+            # This instance is the live, high-resolution view and deliberately owns
+            # no durable storage: it can be scheduled anywhere and is back within
+            # seconds, at the price of losing its window on every restart. Long-term
+            # data is a separate concern and does not belong here.
             retention: 4h
-            # Below the volume size on purpose. Retention alone is a time limit, not
-            # a size limit: an unexpected burst of series fills the disk, and a
-            # Prometheus whose volume is full stops ingesting and needs manual
-            # repair. With both set it prunes before that happens.
-            retentionSize: 3GB
+            # Retention alone is a time limit, not a size limit, and this volume is
+            # shared with everything else on the node's root filesystem. A burst of
+            # new series would fill it; with both set Prometheus prunes first.
+            # Measured steady state is ~320 MiB (WAL ~200, two 2h blocks ~120).
+            retentionSize: 600MB
             nodeSelector:
               node-role.kubernetes.io/storage-disk: ""
             resources:
               requests:
                 cpu: 200m
-                memory: 512Mi
+                memory: 768Mi
+              # Measured at 121k series: 735 MiB RSS after an hour, with the head
+              # not yet holding its full 2h. Note that 4h retention saves storage,
+              # not memory -- the head is always 2h regardless of how long blocks
+              # are kept, so this is the same footprint the 7d setup had.
               limits:
                 memory: 1536Mi
             storageSpec:
-              volumeClaimTemplate:
-                spec:
-                  # Local, not replicated: Prometheus data is rebuildable by
-                  # re-scraping, so paying DRBD for it buys nothing. Measured write
-                  # load is ~42 KiB/s at effectively zero fsyncs -- this is about
-                  # not spending the replication link, not about speed. The cost is
-                  # that Prometheus cannot start while its one node is down.
-                  storageClassName: linstor-single
-                  accessModes: [ReadWriteOnce]
-                  resources:
-                    requests:
-                      storage: 5Gi
+              # emptyDir, not a PVC: Prometheus data here is rebuildable by
+              # re-scraping, so neither DRBD nor a node-pinned local disk earns its
+              # constraints. Without a claim the pod is free to move between
+              # netsvc-1 and netsvc-2 and is serving again within seconds.
+              #
+              # Deliberately NOT medium: Memory. tmpfs would charge every stored
+              # byte to the pod's memory limit on top of the head Prometheus
+              # already keeps in RAM. Plain emptyDir is a directory under
+              # /var/lib/kubelet on the node's NVMe -- same lifetime, no RAM cost.
+              emptyDir:
+                # Bounds what a runaway cardinality can do to the node's root
+                # filesystem: past this the kubelet evicts the pod, which is a
+                # clean restart rather than a full disk shared with the kubelet.
+                sizeLimit: 2Gi
             # Without this the operator only picks up ServiceMonitors carrying the
             # release label, which silently ignores anything created by other charts.
             serviceMonitorSelectorNilUsesHelmValues: false
