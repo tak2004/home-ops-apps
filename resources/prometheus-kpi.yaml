@@ -71,8 +71,22 @@ spec:
           expr: sum by (namespace, pod) (rate(container_network_receive_bytes_total[5m]))
         - record: pod:network_transmit_bytes:rate5m
           expr: sum by (namespace, pod) (rate(container_network_transmit_bytes_total[5m]))
-        - record: pod:fs_usage:bytes
-          expr: sum by (namespace, pod) (container_fs_usage_bytes{container!=""})
+        # Disk throughput per pod, not occupancy: container_fs_usage_bytes does not
+        # exist on this cluster -- cAdvisor does not expose it through the kubelet
+        # endpoint, and a rule referencing it silently records nothing. These two
+        # counters do exist, with namespace and pod labels.
+        - record: pod:fs_read_bytes:rate5m
+          expr: sum by (namespace, pod) (rate(container_fs_reads_bytes_total[5m]))
+        - record: pod:fs_written_bytes:rate5m
+          expr: sum by (namespace, pod) (rate(container_fs_writes_bytes_total[5m]))
+    - name: kpi.volume
+      interval: 1m
+      rules:
+        # How full each PVC is. Keyed by claim rather than pod, because that is how
+        # the kubelet reports it -- a volume outlives the pod using it.
+        - record: pvc:utilisation:ratio
+          expr: >-
+            kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes
 ---
 # No RoleBinding anywhere: this instance discovers nothing through the Kubernetes
 # API, it scrapes one static target. The operator still requires the account to
@@ -103,10 +117,14 @@ spec:
   # labels that came with the federated series with those of the federation target,
   # and every node would report itself as the Prometheus service.
   honorLabels: true
+  # Matches the recording rules by prefix. node:.* also catches the handful of node
+  # rules kube-prometheus-stack ships itself, which is welcome here -- they are the
+  # same kind of aggregate.
   params:
     "match[]":
       - '{__name__=~"node:.*"}'
       - '{__name__=~"pod:.*"}'
+      - '{__name__=~"pvc:.*"}'
   scrapeInterval: 15m
   # Federation of a few hundred series is a single fast request; 1m is a generous
   # ceiling that still leaves the 15m interval untouched.
