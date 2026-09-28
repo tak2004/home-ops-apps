@@ -111,6 +111,45 @@ spec:
     type: Opaque
 
 ---
+# The client secret Forgejo presents to Authelia, in Forgejo's namespace.
+# Authelia stores only its pbkdf2-sha512 hash; this is the plaintext half.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: forgejo-oidc
+  namespace: forgejo
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    client-id: AgBMil6rCWoTFgXb6d82O+nIwlE6vNNJVdWR4vBp7tvoGkv4RNCT9honQna8Q/4TqE/G/cuPwb9r/SM3q/sFID0pSC6m5zhuLS9BOXeA4TeVsmEI0G5rjaPMjYTC14QFb2fMK4eCgiYYlgo/e/nGBgSVjU3ntEI4RM3Bd1uu0h4ob+3iG+ShhBHv6gjHKO4VWulm/qRF1vG0NkV2Z1tKvsSVuIpFzn44XQ9NbFt0VLTZsIDNSjSaOckTJIbOWubNx/EcDWXyFif/Gyad9q7wqVIBqFrd4Fggc9vmGqCy421mUGtRXlM2HbeT6NASKTzunQg31aotq3Yo6jDyTbGXP1/bE89NtQOgl1PiDTaH+xOW/dpEmzUwcaXz3wL7nvvlmlckILmWYAv8fZVBo3uFgJiqtefj+SAvL+CuQJe8YSRSnOfC/hbNWTbUa5gkKS79aToLsuYat8a04o6MhjzbkFaOIgthhWLhpdJ0WlBdLwkNs7cQ37ycc/ptZZzlQe9lP0AtlOMNFESPcvyZrIGEI6G33Zpaa6xdXJaELm78KGEXItsrdPfm2LHcfJ6S038BOV2WGo4jfb0heDlxk4+0RgATbmuVKyfvCDGd2O2+VwF40mNxFKKickCJb0ilHpGX496bP7iCQgQjdOUGc7JxCfkKGDaeZuGD5AS4ZKT3YFBKL/XtNSaXW6EKdfumu1lyzfVjRx76N9X8
+    client-secret: AgCFoUexAttIcJYoMri/FLV8sZDTDmdYK80SpXz4o67Mwx6ncRH6p7uyGR0lUt/E5goziaVOZF8HHDCn/WFUDBTsTAZdo685/TrJmEQhLuqGHRZNYBPRvXDqHxotd2J+3lCrkXQfGGbs7PSOI7WGpMn04YxIicBlhCB5iBnb0jADhQ4xc/EMNg7Z/jPDwgZszU3DPH7HtcSgqb6BtLFptQ8b9+VH4ZHm/4ZHOkaEihnzbtkNBk6sTYacjiaduKC4PoSzJDoypCG17jaLcfY7F3oTNHVBK/M9A7LalL9vlO1yNXPpVtZ7NtwAQjius3vDiM1Jba9j1rdVkYbObnNy0PrD6G2pIE4OfYwdxjntEPNZVRzERtFgIhf4MrerSPEankTwvq9GRubFjKruFhNkr7vvVpR79vROEqAlpIa1Ak3oe2rVne0O23Gl5AZnhtP9BWacuDBD2G0dMIWsvmM8hEqbIXxZBf3EqmSmti64LSqYsvNHpbaVpI8cEP4KypAsc4wtJsxEQxTCf/hi8m6YCunYZA8zk1nxdSx0nwW6NcJFMk6IVwxXMJk1TUJcXiWQGDWEBcsM5dZxwmlWmi5YB/fOEHoGprJFkNwNUynU/gEjIrsC0azToBC6Ch6DgLfw1IhpA6nARRb/I630JKXAtlJrob9LonWu1rWx3CH8hQohSyc8cCKnIbinJWY0Rf7sSQW5KtEY7zQzfwDIGRCJcF+pRGQWKflwj0kgetWaaZME/SuXeiI4R1IxKEX8bl9zxG0N4S31aeL6WYXzwXuIU1LgSRaywwIi2n8=
+  template:
+    metadata:
+      name: forgejo-oidc
+      namespace: forgejo
+    type: Opaque
+
+---
+# The same for Grafana, in the monitoring namespace.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: grafana-oidc
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    client-id: AgC9dhUxfMsaSO10vNp5FUXJhhjqouMB1xyRXq/CiKkqZnAhAAk1MtdlBpdFK1GD8fhl4bexH7PDJNMESP+cx6RKMi2ySl7WypCaNKxr5BxQOiJergEFmy+jFUno9saWqIJ3kK70wiqQ+ZFlp7MjjSNuUzOUsoF/s8FTbyQia7qcSKORCP/daGAiQvaTXWjwyx6z1covlbzxBaqxQhk5HnqL29eP0KmG+TKwNXvGKcoqqCK/lOQyrDoX319sN+eZhpbuad4EwmD42GiDBQdyInxk47yRaSFpjU8EkRqJ5BdNiB/gVKCIXUn1W5bI1+Iqv5ietw66cxS8CcK+SiN3E0jPNAHACqgU31TXJ4WBrM/1J51WMLS8Y90svvN8apCxOfDb7dHsjZoSWdegwoy/Oj7mFSuHNOLpm1FgPwDBHT5w0i65F26oFakr8uPsJ5wfB2/EMo0NHqMlxewXMh0lx/APJIoi5rYtXs1f3cPo2pPhY1QGJ/KM3cWhlgqMPVUW6O3dABysi2WAhHaJM3FtcYwzQkHCZbrqpk3cg8GeqaiHJSZ5sr11PX1cd1oy+ry/9fxc3Uc1MoS7a2DdqIfV5uEdeL23l4wO5yQ3bN4Wcs4IVxd1srkMLK3+6AL75dvIOb9sHjLBPjyPiUKx0IanGYgZJPF4rB94fAnPSKRm9UvtWt/MtA9q2I1GHSTKOyyp47Tv1li9F7kV
+    client-secret: AgCOUJ0ET3UpEdHYK04klhUNWlIfTv1jCIGsQrDE0MPMV5jT4/DfLs675MoG3bpJnmZPz6+Kn0jeeDmoxIyixqeh9APB6HHmt1459u0hkgbJ6bGv/2J8d38qD1sVGpjfnbG7tb4vEWze8fjqshKP7T2KMLucQ2sIrTAtx4DDRkrdJ/I4FueNYMzFSbeHyiit1d7sVFMS828MqWjDknw4a+ARvzjPDjrq4G1Ma+xKo1cKuRFXElOt7U0CUZEqy+6LeshHsM7uCeILUxYI2HGmbH4w+Wg1vMI0q+NAOt8yHCE8Hvt3PMRsG4FC/QhVVhZ3cVVvhk2is4fN6xAEL0Jg++57c98FIsAXpLaesmCDc8wzZvuesX3MCcfKyeZVlh9U+a5CzmbySGZH54E3eCw5FvdaRAXdrpde7Fieaipgcrak7UI8tDbFns0VRHNkS62I4FroklOyHK262jh4v8TMUMmopDf0xLrYBQ37RgPK/J68ozGEp3cCRmcpPUwRxCaUO7A3prK752Q34bpvuTgs5izpcT++lVLCmy80bOuHZvGRtEGWtgz5rl1ay1fBLb/y7p1h9Ku6+rQHzFFQeqP4mw6LVz21zpODk33hAlQRJsDYlPSLMW/o8vXE0p9uy5czPBmjuBiVt7q6Olrto1RnxSZPy5r051j8OF5QIVZEsKJMEaIkjws03WI5EgeAriI2k6uWuwcVsBjJ3nYlzjsStW/tFI/51Cv+kWgCB34kiwAMte3E753s7+cIB275d0jeecmpirc9rACwr+9HrLcN1CJ/Z2C6gTFBWSo=
+  template:
+    metadata:
+      name: grafana-oidc
+      namespace: monitoring
+    type: Opaque
+
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -192,6 +231,29 @@ spec:
                   use: sig
                   key:
                     path: /secrets/oidc/oidc.jwk.RS256.pem
+              clients:
+                - client_id: forgejo
+                  client_name: Forgejo
+                  client_secret: '$pbkdf2-sha512$310000$k1t/9aXKPl2TXyZ4WxnOIA$jeGr/f.tDP4lv1QeyDSN1BZakKtKpBRn.v/Hk6EIt0Zc470F7QnPnxdgrCjZjada0i4vIIeJFOugkFMzIWCP2w'
+                  public: false
+                  authorization_policy: one_factor
+                  require_pkce: true
+                  pkce_challenge_method: S256
+                  redirect_uris:
+                    - https://forgejo.svc.home/user/oauth2/authelia/callback
+                  scopes: ['openid', 'profile', 'email', 'groups']
+                  userinfo_signed_response_alg: none
+                - client_id: grafana
+                  client_name: Grafana
+                  client_secret: '$pbkdf2-sha512$310000$AhO2DFd.IaVbW82JyOGGYA$JoD1E7SE15qhhh.C8sqkJcrKd4OQ7riZ6dhHiq/itqyHtFUFchCLXU.rrfbYZ9FZU6b1md5jPVue5OIrZFMskg'
+                  public: false
+                  authorization_policy: one_factor
+                  require_pkce: true
+                  pkce_challenge_method: S256
+                  redirect_uris:
+                    - https://grafana.svc.home/login/generic_oauth
+                  scopes: ['openid', 'profile', 'email', 'groups']
+                  userinfo_signed_response_alg: none
   destination:
     server: "https://kubernetes.default.svc"
     namespace: authelia
