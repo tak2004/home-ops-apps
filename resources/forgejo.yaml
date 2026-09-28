@@ -160,8 +160,23 @@ spec:
               DISABLE_SSH: true
               START_SSH_SERVER: false
             service:
-              # This forge is reachable by anyone on the home network.
-              DISABLE_REGISTRATION: true
+              # Not DISABLE_REGISTRATION: that also blocks the account Forgejo wants
+              # to create for an OIDC user, so the first login lands on a chooser
+              # where "register new account" cannot be clicked. This says the same
+              # thing in the way that leaves SSO working -- no local signup, accounts
+              # only through Authelia.
+              DISABLE_REGISTRATION: false
+              ALLOW_ONLY_EXTERNAL_REGISTRATION: true
+            oauth2_client:
+              # Creates the account on first login instead of asking.
+              ENABLE_AUTO_REGISTRATION: true
+              # auto, so an OIDC identity attaches to an existing account with the
+              # same address rather than presenting the chooser. The addresses come
+              # from LLDAP by way of Authelia, so this trusts only your own directory.
+              ACCOUNT_LINKING: auto
+              # The same claim Grafana maps to, so one person is one name in both.
+              USERNAME: preferred_username
+              UPDATE_AVATAR: true
   destination:
     server: "https://kubernetes.default.svc"
     namespace: forgejo
