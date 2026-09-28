@@ -1,3 +1,36 @@
+# The monitoring namespace as an explicit object in the first wave: the SealedSecret
+# below names it, and cannot wait for the Application to create it.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+---
+# Grafana's local administrator. It exists as the way back in when SSO is broken --
+# which is when you most need Grafana. Read it with
+#
+#   kubectl -n monitoring get secret grafana-admin \
+#     -o jsonpath='{.data.admin-password}' | base64 -d
+#
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: grafana-admin
+  namespace: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    admin-password: AgAVUNZ48TUH82RaVM89kJp+hIJxwrleRql4sL5qcVJoZnw3W6wxht7XNPKBejIuSRVs9j5lZKSUzmSvLhn6Kv4EKaLDUNnF8GakSRohHc8d1lewK/Vx3vKFj8jtpisBlNlvK7eWfA7AxoMgeVy8bkbX5Way6RQSk+sijwXXUeWE6KSYvKAFmdgCkOJ3Apnhb9RwQP2f7o3zrn1z+gdraOsJTH0N9UC2+m9SVaPfSZHmf1kwOwf1LKZAhF0nVxm5QQLx+A9RIAE58zJIqVayXt9TG0DZHinYv2SJb8AHeVDWXV00VzdkQgPMJPIyS2famJGHBR5Mnkj3xlQ5tSZIi36VmRVSnMoAwkfDmKcyt6mgkGDg24E4fzT5U6cV6mCd0/IEIGX4IswDriQjZWHw5h/YofW+u+pjnBXAVXi/ZYv3AFhqUam1s9yPvkhAmFaQR9muNmueIzuDoxRobvKUFsOdbubmHVDVkLBqWXgY1aTG0XinZDOd0iD5YpKJUwvbHasBq4n7rzDjHRGW8rlw1xlDtlJ4GmoFq6CAITctBQFr2wi6Hjrkc6KuWCN7u8PUVoEpNc467deG/GgwwGQ2cU1ziICDG4yznrP/ePm+YYH2ErsdQmZZPkl/NNJ0wMirzHbOXkhnBil1hur/FN9ecE33cRc0BH8s2VExGP+LEcqQtjAAhW6tOueOQHiKbPWcl+ahx3ZbPvWFjUQl9ihLYWVtKUQAE47rn70=
+    admin-user: AgBhlo0Jn2/8x4zdf/NUo/jLAe7iXHnYNy2zp6f8hsrgC959n3+ipKnZElXMsoImdjEqzxh4nmAIbiIdljFHFqmigv9SWpkh178Nstci4cDnPkdtZDoDVUH5gP4DGQ6p7mNm9qboGWZtylXDqGkHmhKlnXuXNwu6xe3xrM6qwBwNES9B4b2BQPjTWqC2DvBmMzDWtTFMNv0TXtxbj/MJmbeJsnTtXzsSxo89CcCq3qDtYchWwmmEyk5e+RYizcF5L0ntMMpybS5gsdPbpLs1RDjVci8ynGXwC3NK0ud3lR5rm528S30kAefezLfKPz0k9Q+lpnXe1xKGASNR+llEQmM1+tGUS3PsC1tvl89kX6cCNJAtwhsmxKxSBFoD0bOSdoF/TcrLXeT7Ex/rcOLBttjZIr4C3UmBuBXffTnxLgCGSk4Dh19gZzb+D1vJL0YoXoJTVUke0Eut57hMhnwacZNH+iwDrNHTFbMKxa/Tsmm23mXQP/LTexUxJjZgJRlcyk/Y0O8I9mFhmkZysRldzjdVfZuDtGy85PoVpOL5SptzBx+pKv6USuZe7Gb/dTV4+dChmuMQrsd7fjF8KU7TQq8zl9hnQMibPWk3M/GZyiSo2bd5hYizlld2FW9+f2dqfN++EtzbKbc+OMCzqrTlDQvgcrOx+dZ/UB7iDGvg4RVCIRnCuOeINxWZZMFaFbrkMWbh4yUEeg==
+  template:
+    metadata:
+      name: grafana-admin
+      namespace: monitoring
+    type: Opaque
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -5,6 +38,8 @@ metadata:
   # argocd, not the destination namespace: ArgoCD only reconciles Application
   # objects in its own namespace unless application.namespaces is configured.
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   project: default
   source:
@@ -90,10 +125,57 @@ spec:
           # supposed to survive here, it is supposed to become a ConfigMap.
           persistence:
             enabled: false
-          # NOTE: this is the chart's documented default password. It is reachable to
-          # anyone on the home network. Replace it with a SealedSecret and point
-          # grafana.admin.existingSecret at it -- the repo already runs sealed-secrets.
-          adminPassword: prom-operator
+          # The local account, kept as the way back in when SSO is broken -- which is
+          # exactly when you need Grafana to look at why. Everyone else signs in
+          # through Authelia below.
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
+          # Grafana calls the token and userinfo endpoints itself, server to server,
+          # and has to trust the private CA for that. Not the secret from
+          # cert-manager's namespace -- that one also holds the CA's private key.
+          # Every certificate home-ca issues carries ca.crt alongside it, so the
+          # ingress certificate that already exists here is enough.
+          extraSecretMounts:
+            - name: home-ca
+              secretName: grafana-tls
+              mountPath: /etc/grafana/ca
+              readOnly: true
+              defaultMode: 0440
+              items:
+                - key: ca.crt
+                  path: ca.crt
+          envValueFrom:
+            GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+              secretKeyRef:
+                name: grafana-oidc
+                key: client-secret
+          grafana.ini:
+            server:
+              root_url: https://grafana.svc.home
+            auth:
+              # Ends the Authelia session too, instead of leaving one behind that
+              # signs you straight back in.
+              signout_redirect_url: https://auth.svc.home/logout
+            auth.generic_oauth:
+              enabled: true
+              name: Authelia
+              icon: signin
+              client_id: grafana
+              scopes: openid profile email groups
+              auth_url: https://auth.svc.home/api/oidc/authorization
+              token_url: https://auth.svc.home/api/oidc/token
+              api_url: https://auth.svc.home/api/oidc/userinfo
+              login_attribute_path: preferred_username
+              name_attribute_path: name
+              groups_attribute_path: groups
+              use_pkce: true
+              tls_client_ca: /etc/grafana/ca/ca.crt
+              # LLDAP puts everyone who may administer the directory in lldap_admin;
+              # 'admins' is there for a group you create yourself. Anyone else gets
+              # read access rather than none, so a new account is useful immediately.
+              role_attribute_path: contains(groups[*], 'lldap_admin') && 'Admin' || contains(groups[*], 'admins') && 'Admin' || 'Viewer'
           sidecar:
             # searchNamespace: ALL is the part that matters. By default each sidecar
             # only watches its own namespace, so a dashboard shipped next to the
