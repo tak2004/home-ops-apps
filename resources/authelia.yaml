@@ -102,8 +102,8 @@ metadata:
     argocd.argoproj.io/sync-wave: '2'
 spec:
   encryptedData:
-    client-id: AgBMil6rCWoTFgXb6d82O+nIwlE6vNNJVdWR4vBp7tvoGkv4RNCT9honQna8Q/4TqE/G/cuPwb9r/SM3q/sFID0pSC6m5zhuLS9BOXeA4TeVsmEI0G5rjaPMjYTC14QFb2fMK4eCgiYYlgo/e/nGBgSVjU3ntEI4RM3Bd1uu0h4ob+3iG+ShhBHv6gjHKO4VWulm/qRF1vG0NkV2Z1tKvsSVuIpFzn44XQ9NbFt0VLTZsIDNSjSaOckTJIbOWubNx/EcDWXyFif/Gyad9q7wqVIBqFrd4Fggc9vmGqCy421mUGtRXlM2HbeT6NASKTzunQg31aotq3Yo6jDyTbGXP1/bE89NtQOgl1PiDTaH+xOW/dpEmzUwcaXz3wL7nvvlmlckILmWYAv8fZVBo3uFgJiqtefj+SAvL+CuQJe8YSRSnOfC/hbNWTbUa5gkKS79aToLsuYat8a04o6MhjzbkFaOIgthhWLhpdJ0WlBdLwkNs7cQ37ycc/ptZZzlQe9lP0AtlOMNFESPcvyZrIGEI6G33Zpaa6xdXJaELm78KGEXItsrdPfm2LHcfJ6S038BOV2WGo4jfb0heDlxk4+0RgATbmuVKyfvCDGd2O2+VwF40mNxFKKickCJb0ilHpGX496bP7iCQgQjdOUGc7JxCfkKGDaeZuGD5AS4ZKT3YFBKL/XtNSaXW6EKdfumu1lyzfVjRx76N9X8
-    client-secret: AgCFoUexAttIcJYoMri/FLV8sZDTDmdYK80SpXz4o67Mwx6ncRH6p7uyGR0lUt/E5goziaVOZF8HHDCn/WFUDBTsTAZdo685/TrJmEQhLuqGHRZNYBPRvXDqHxotd2J+3lCrkXQfGGbs7PSOI7WGpMn04YxIicBlhCB5iBnb0jADhQ4xc/EMNg7Z/jPDwgZszU3DPH7HtcSgqb6BtLFptQ8b9+VH4ZHm/4ZHOkaEihnzbtkNBk6sTYacjiaduKC4PoSzJDoypCG17jaLcfY7F3oTNHVBK/M9A7LalL9vlO1yNXPpVtZ7NtwAQjius3vDiM1Jba9j1rdVkYbObnNy0PrD6G2pIE4OfYwdxjntEPNZVRzERtFgIhf4MrerSPEankTwvq9GRubFjKruFhNkr7vvVpR79vROEqAlpIa1Ak3oe2rVne0O23Gl5AZnhtP9BWacuDBD2G0dMIWsvmM8hEqbIXxZBf3EqmSmti64LSqYsvNHpbaVpI8cEP4KypAsc4wtJsxEQxTCf/hi8m6YCunYZA8zk1nxdSx0nwW6NcJFMk6IVwxXMJk1TUJcXiWQGDWEBcsM5dZxwmlWmi5YB/fOEHoGprJFkNwNUynU/gEjIrsC0azToBC6Ch6DgLfw1IhpA6nARRb/I630JKXAtlJrob9LonWu1rWx3CH8hQohSyc8cCKnIbinJWY0Rf7sSQW5KtEY7zQzfwDIGRCJcF+pRGQWKflwj0kgetWaaZME/SuXeiI4R1IxKEX8bl9zxG0N4S31aeL6WYXzwXuIU1LgSRaywwIi2n8=
+    key: AgASXU+b/aUdXRH5tOoFxYdbcdxvMaLgENLGKsNR5Mef0sQX4Hu5TMGtv4tmI873p7uXcMjWBujXm1BHtnfySNqy0hUb2VZjJjLmEnHhldgPg8BE4IxnDjNHxfxFZvPeheQDn3/Rua2CquvL9Kvf3Po5fxUazVxqkqBfiX5kEpKC4Q7bGwdMqXm7xQdICxPI00XiSE0401BiWImZ7DldllWK2lDTJfEuuOTlnNONIa0HJ7V2yfM0HL17Ef6CcBHA0CBBZDolrsQGNeK2iAhg/77UolDIV/g1XxG98LaasvCkTXWPTxR1mC/4PFkZYlhB7L3fYAtWzb4GbI3GOK+ALoFtrCS9hfDTYkkxsAYxXO5JJodXYY+LJHAyhZmvTXWOikdvU0zNUg5Rca1fsHQlV9d+agN9p9B5Xv2+NyGKv1WvOPw/E6VVr4RBXUDLdLKdQqBNXhTlqXBSJIx8kJL8pqLPJOOCdbucP34MC0vPGqIJvpC7SP4NjD3EY3BulVQMWFw/Sqz/RYvmeKovsDuE/JIkA7Gh4jZ474M/tUvyD1DT8m21t17fPbPOFR5WRVfJ4wlV+5S1itl0LRUymCdlrpxn2OlYsxtR+gkfohx24JC0CtbOpdUol2M2k4XHMmflgWJ0dmX4JaCr4mgjtsZ1N0MVFboilKCmpC2eVRX1NdUDdJv99gfaIm1GHlCRS/vCcjKIQNKVxUJl
+    secret: AgBk+8hOm9/cDT+e6qS4vVw4Ltlks/+i5fSWJlpFWBKNIpSl5cBU/08vM4zfuc6AAnVrYVdAQUSw89Kt1v3nOhLQOdMP/TLB/7mlBzdJQsB2zJXUOCfBNzMW+tD0vrq+jIYdUdLrpUOVGdUgVs6UWqUIAxLZIKTQ+14AAKqCp1J1rgc386ZFs4d3l71X5fvtax0I97MNgFJYl/5SpWZFK+8PMEGOUpSSkVSKWXYi3Zdtm1GnUaD5K1d5tCSF7ACHF2higPcsA1PdVjO6MqiVAZ/HB2+rDfb4n9mW5Hd7rkBzMneXVSS99klpGOa/QIbxVkO0QneYHl8X/Blg1qqxow1sRRws46L39nXEfxeqFCdPQD3HWGQoTzwLrc93pAcst3AuG6x40SkNstn0p3K+b+z6i+ulV1I2uWOBm0jUveLIizfV+JnVLVSaKaMVVMgtqeVQW2QQCD6/nl+oTiB6R6aspRnf7YhaenBBaH6TycczVcpucnizY3xFMuX+MLIf8vexPZEj65LXreUWzpyUTzx1uQnXZpEobQd8gYKQjkGkTNGqRbNSaNXR0RUEjldNxul05f+cJ3/+1mU76/guv87vtkY3vfpNdhuzeYD4I8WHLgjNG/5vkDomxr3aLTfFX6QtRmSFeKevq3Vs6SKHwsYz+4h3zbDtEE4B5HjsBy3lC95A7HSdTAVsLBx6sva7MDHaUlEyhAvCYRRslrBmLG2gVFF5phT/gKs765VbgP+Q3NDPN3ub46EWUk1lBqmYkV5APw4QZ5juOkrp4huEa8aTqfAy4G6a5bk=
   template:
     metadata:
       name: forgejo-oidc
@@ -229,7 +229,7 @@ spec:
               clients:
                 - client_id: forgejo
                   client_name: Forgejo
-                  client_secret: '$pbkdf2-sha512$310000$k1t/9aXKPl2TXyZ4WxnOIA$jeGr/f.tDP4lv1QeyDSN1BZakKtKpBRn.v/Hk6EIt0Zc470F7QnPnxdgrCjZjada0i4vIIeJFOugkFMzIWCP2w'
+                  client_secret: '$pbkdf2-sha512$310000$GttJ.6BJySZ15daVI.dbJw$z0.viA7Vh.9T9nxHlxwMdc3o9EWhfzrXQ/PR.crI6TGBaqR1fKZ1lC1r068gLg2bRFOYSNAm5l8kN0//NzeWzw'
                   public: false
                   authorization_policy: one_factor
                   require_pkce: true

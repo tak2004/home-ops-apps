@@ -115,9 +115,41 @@ spec:
         # and then sits there Completed forever.
         test:
           enabled: false
+        # Forgejo fetches Authelia's discovery document and exchanges the code
+        # itself, over HTTPS, and has to trust the private CA to do it. Same source
+        # as for Grafana: every certificate home-ca issues carries ca.crt beside it,
+        # so its own ingress certificate is enough -- no need to reach into
+        # cert-manager's namespace, where the CA's private key also lives.
+        extraVolumes:
+          - name: home-ca
+            secret:
+              secretName: forgejo-tls
+              items:
+                - key: ca.crt
+                  path: ca.crt
+        extraVolumeMounts:
+          - name: home-ca
+            mountPath: /etc/ssl/home-ca
+            readOnly: true
+        deployment:
+          env:
+            # Both directories, not just ours: Go reads SSL_CERT_DIR instead of its
+            # defaults rather than in addition to them, so naming only the new one
+            # would make every public certificate untrusted.
+            - name: SSL_CERT_DIR
+              value: /etc/ssl/certs:/etc/ssl/home-ca
         gitea:
           admin:
             existingSecret: forgejo-admin
+          # Declared here rather than clicked together in the admin interface: the
+          # OAuth source otherwise lives only in Forgejo's database. The name has to
+          # be exactly this -- the callback Authelia has whitelisted is
+          # /user/oauth2/authelia/callback, built from it.
+          oauth:
+            - name: authelia
+              provider: openidConnect
+              existingSecret: forgejo-oidc
+              autoDiscoverUrl: https://auth.svc.home/.well-known/openid-configuration
           config:
             server:
               DOMAIN: forgejo.svc.home
