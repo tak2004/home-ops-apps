@@ -130,6 +130,28 @@ spec:
     type: Opaque
 
 ---
+# The same for Argo CD. The part-of label on the template carries weight:
+# Argo resolves the $argocd-oidc:clientSecret reference in argocd-cm only
+# against secrets that have it.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: argocd-oidc
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    clientSecret: AgAFWQrGMQAtqMNe0IuD3aOqTyPXncH9E5GyJoQldOz6BubcIb3GXc0+8aHFSS07qGpKIDl4fkcVSxOpCvo7usi+7lcGy9yd0BtksI8b1YApwKbxI4jsj91NKO7x3ImIrPYhj6yIzkHepgY85BzDzfGOGac7WgoQRRIgF18Av0ejWL/NHmBK7k6BQPgT0GQZpJot5w0DwD5qO6UNLZ4pkHr6+dSh2FdWAmNJBVKng1jJwqfXm4pxHANcUSZPx5U/yzBX9p32vQcIQnWeNu5GFvqc0acCW0MByNaAJTR30cyBUyWqCflfh3m/0NHZiRx2+uYLwBzfIRei9r6zvAckp5yrT1nEsszTmq+FPBy/471HLucPKL55VcwNQmyvobjurblALJaUgAmaI4SKKTnYAPUrX+1tKZckPw1RD14WhKAzcQdarh2jYM9tls3Qz4LnF75s39NqT7yANBmSm7cvSvIeAfVzDSknGxGs4U2nJop0lYMbLlaQ48K+ZDo5VofPyKAQTmE8PAt3GQLdQZXBSbVkK8wVKB7kU+zmb54DOe9uVEvooeNy9FsWnkQIgtfh+xm3cbD6I0pRY4KFyMcJDmLJF/LM9LynMOOtOAOBzz7Nz2LstQ/aDFs8XdKHWhIfhwwnkcCNd3J7VmfqDhWgd2dhXslhZ+YmCMWNihIPYxuq7tMor5biVfcVfefo3ykk5QMIT/sS3rLmH+5RTQG4zzZgUUUMbvA37bOEFeXAxRzcE9BJ4xOuGQH3/Ybe08JcGDyBF3KP+6QqSPEG4G1Km1RNbzUwWGLWMkU=
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: argocd
+      name: argocd-oidc
+      namespace: argocd
+    type: Opaque
+
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -252,6 +274,19 @@ spec:
                   pkce_challenge_method: S256
                   redirect_uris:
                     - https://grafana.svc.home/login/generic_oauth
+                  scopes: ['openid', 'profile', 'email', 'groups']
+                  userinfo_signed_response_alg: none
+                - client_id: argocd
+                  client_name: Argo CD
+                  client_secret: '$pbkdf2-sha512$310000$KrAGMfuryvIMPlO2EFQQjg$m3rzXOgVyvysV9FbKy8WnCKfRYTQtYZK4hA2s/ryhL38.4NhF5jJFGx0ZN1oNZY0iB/fxmsVRgRUCXfpApYRgw'
+                  public: false
+                  authorization_policy: one_factor
+                  require_pkce: true
+                  pkce_challenge_method: S256
+                  redirect_uris:
+                    - https://argocd.svc.home/auth/callback
+                    # The CLI opens a local listener and sends the browser back to it.
+                    - http://localhost:8085/auth/callback
                   scopes: ['openid', 'profile', 'email', 'groups']
                   userinfo_signed_response_alg: none
   destination:
