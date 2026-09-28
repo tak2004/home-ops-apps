@@ -9,9 +9,10 @@
 # Alertmanager stay unauthenticated for now; Forgejo, Grafana, ArgoCD and Headlamp
 # speak OIDC themselves and do not involve the ingress at all.
 #
-# Everything is generated with the Authelia binary rather than by hand: the random
-# keys with `authelia crypto rand`, the signing key with `authelia crypto pair rsa
-# generate`, and the password hash with `authelia crypto hash generate argon2`.
+# Users live in LLDAP, not here -- see resources/lldap.yaml. Authelia's own keys are
+# generated with the Authelia binary rather than by hand: the random ones with
+# `authelia crypto rand`, the OIDC signing key with `authelia crypto pair rsa
+# generate`.
 #
 # sync-wave 1 namespace, 2 secrets, 3 the application -- the SealedSecrets name the
 # namespace and cannot wait for the Application to create it.
@@ -69,44 +70,23 @@ spec:
     type: Opaque
 
 ---
-# The user database. The chart only configures a path to it and never supplies
-# the file, so it is mounted separately. Passwords are argon2id hashes.
+# The password Authelia binds to LLDAP with -- the same value LLDAP creates its
+# admin account from, in a secret of its own here. It gets its own secret_name
+# rather than joining authelia-secrets, because rewriting that one would mean
+# regenerating storage.encryption.key and losing everything already stored.
 apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
-  name: authelia-users
+  name: lldap-bind
   namespace: authelia
   annotations:
     argocd.argoproj.io/sync-wave: '2'
 spec:
   encryptedData:
-    users_database.yml: AgDN+KVPgUe9j9D8gvSAUG0l4Jk1/6bZI/VFiMi3jFavSoLrNtTpOcHZP/JhqVETPCGIVR7o6y9YaNjyc7rg9SRebR3UYTtimHCQQZVCMTBh8435WFgrxVjwhEUdttFOcBhvmQDLHMRLdkkkCQvg5DvpjR6D3pzfJqnE1GwlOsgRMeKybefJ2WTIECphfNzyjHYZpm7W6GRK5HH7GSdiXAl5BvxShghyOpJzug3nOaq/w7/I/qMI5TLs3rWBh18uQXo6HDPKtn4wTw+MwIJf4zft0J7Dg1VROCQamS7x5olY55vtQFumh2pL2iaMkebxrZl53cjVUEmbAQeifS7BK+NKcCt+mU7Ej6cIKlb0EQEZBFvyR2kGz/bll9NWEwWDe45prsCZnfUP8gEqEZHGiaABzdhpHiFpTqB/ninKZ5kIBJQKN0bhy4uHhzSqmYZL//9DITjd/ZSwMUyGUJ0eEmRlsoNyjXmGYts+ItoUwjSFal6al/bpe14PSf1jcxzZswYuJBb97SdfxkJxHOHQIMIRAEuKFA7yFEAOtsVsCQwf2/H4inP1I4iPFHoPLcn1p+OR49CdVaRwrDh428kg1XGi0NdSBd7aVZKMl81tv+9VLZH2fti0xeT7ZmIomgYaoJkfuHDayDvFuHEtCdlQo1muLi95L6/QrqBW3S34236rksYLG4fC3TKuYqSnlXrQdQ0MtuY3+pE0KKWu+URP2obmko946wtu7B6DbCkXiS/wu9ow2bIedSaLVCWh+C5OKh0WBo1bYMNo7h51UrSBYGIKzPW173ABAFdiY14QW1rMAZhomiOYF1eoQet4u2+l+DWVe4rDzn1icuSH+nhKJo71gTVhBRLNBMXRQajcHw9wBaI8mOMfQHsC8bHdwt1xJzv9M1OFqSAu7NErW+u2gAPOAH1lIAB4KMxF1wbOIL+V2Tj0Uu1xqnVj5SE37pINEQt/5cwzkCjqkYws5OMy3mW5hXiNrLm1+wNNI2qNz8IKwrsOfpdUww7nMm+f
+    password.txt: AgCoVYESL6vnPP2tFYwb2WUSf5jj636CYSD4lKq2zbKVrVWoAwxP/nexkkTEPy//4YNIvaNb69n6r1cfKFdFeMd9eTPVpIZ7X/l1op6J0uspOdipCa6ZyI7e4DlwMzrID4CFqy+U4+ccRlIRKA44U2GIlQ1fbg3YOBKJFyhr+kJfgG75kxcbLAC1oQ/LN+RhISdjIh17m6K4pBK6VokQlQbBXOqPeU8FabizSuVBf0zxZb8yFBMeRBNDQnOu5xO53Gx4vX7eyfB6XCF6GXxoZ1qcFSOpmSh5K72qt0TzLSiQ4NRHq+2vNsb5o28o34cYM5fmN33FB5aPsxSNgtOLXk52PixVx2soKMGb7NwpcRpdz5gsinyaAxy7YvOl6qeMJzLwYpwaaOf5Nm6HEzz5kALB5s7x1JoK7Hj1WTTGOqVXsyiB9W0y749Qr4RKrdB8loLF+tZgndH7o4lk2sgCmBK5OWJjdEDmJ+L6aGXAf1sji2kTxn+KKFWHVdO2BVqgvxEZyGUWRvIQSGA3azZyTsAYWkkFKpW5C9W+ql8osWsI3g95nMJ96QhkF8Wg/bxM5xcuXbF9hZtE4W4C2P8iePMmHYzMKy6ozn07o4ntDzA0FSYeqs3NMrskhEZ9OlUGeHPjxUjyiXP8sLPjWFDzFvtiUYF6Jpkr3NjQfALmSuxnU17THi4onfHcJE2P40JAGafr3V2xa3QixQl5PDUp87lVlq1Exg==
   template:
     metadata:
-      name: authelia-users
-      namespace: authelia
-    type: Opaque
-
----
-# Mounted nowhere -- it exists only so the generated password can be read back:
-#
-#   kubectl -n authelia get secret authelia-initial-password \
-#     -o jsonpath='{.data.password\.txt}' | base64 -d
-#
-# Delete it once you have changed the password in the portal.
-apiVersion: bitnami.com/v1alpha1
-kind: SealedSecret
-metadata:
-  name: authelia-initial-password
-  namespace: authelia
-  annotations:
-    argocd.argoproj.io/sync-wave: '2'
-spec:
-  encryptedData:
-    password.txt: AgB3VFCCgLahQyXqoQXy7VFaRy4eKyUwueZyEuwJlPrliGsNKWqAyCSYVZFqad4JmfCZe/jLTOCB40xJFX08h/U8HDbIFNxiH5utaQofAcyvltq/onFzkesU9Ylu+/08Nf2ATYAXZeNaQW1y/VqU9hPmkfj+/9rkLZ09gDt+sRxTN9X0CA/GUfj9igklpc4bRFYt47y8/2WlHDvVBIh1jjL5u1Mefsibxrhhefn4fvdDQ/jrt2bUbgdgDmjrNXcPtwh3n0iAWJ+DBlOySnxBlJ3gaLIeRzhwaQFtqtn4tmI34y0WLP69rLYNhannNff/2H91EwRpk2g7+l+9zaNeEN9/ZZ0LteTaiUx1N/4WaL1jnH8Q7YW2qspFHeC5h9CKS5FK70NYrJdngdlA1+4t96n8Zmgsjn5ieDM+3ldoMA0a54TCxrAKy8gtWrdMpHv9IVXR5IBadyT08Pz6ODJ/J7heX5oIIhTs1dP25BWowC4tG1WbZOPkfcIEOONBLMU5jTxHj9Oe/SWmluPEEvhgAhQcKCP7qYljhQ7sNeXPOv8Nq6WOu/L2kZ/pE3lbCw56gIlUxNTsf5QUCDcYOJCDKaEEVkToaD7JF+SkSzDCvkBGcSI5epFYzMc4Im0hFlG4exw1R8YEH+oAAaLTXmngxiZKjY07TE0KI/0Q/x2oVCSSgyCOqUGDFe8py+lPPjx/nkdAI46ay16ntAxliXcFhb8SJ48Xqw==
-  template:
-    metadata:
-      name: authelia-initial-password
+      name: lldap-bind
       namespace: authelia
     type: Opaque
 
@@ -188,10 +168,9 @@ spec:
         secret:
           existingSecret: authelia-secrets
           additionalSecrets:
-            authelia-users:
-              path: users
             authelia-oidc-key:
               path: oidc
+            lldap-bind: {}
         ingress:
           enabled: true
           className: cilium
@@ -204,9 +183,25 @@ spec:
           theme: dark
           default_2fa_method: totp
           authentication_backend:
-            file:
+            # LDAP, not file: a file backend arrives from a Secret, Kubernetes mounts those
+            # read-only, and Authelia can then neither add a user nor persist a password
+            # change. LLDAP supplies the administration interface Authelia does not have.
+            ldap:
               enabled: true
-              path: /secrets/users/users_database.yml
+              # Sets the attribute names and the password-reset behaviour LLDAP expects.
+              implementation: lldap
+              # Plain LDAP inside the cluster; the hop never leaves the pod network.
+              address: ldap://lldap.lldap.svc:3890
+              base_dn: dc=svc,dc=home
+              # The LLDAP admin, because it is the only account that exists before anyone
+              # has logged in anywhere. Once you are in the LLDAP interface, create a
+              # dedicated read-only service account -- uid=authelia,ou=people,... -- and
+              # point this at it instead; binding as admin gives Authelia write access to
+              # the whole directory, which it only needs for password resets.
+              user: uid=admin,ou=people,dc=svc,dc=home
+              password:
+                secret_name: lldap-bind
+                path: password.txt
           access_control:
             default_policy: one_factor
           session:

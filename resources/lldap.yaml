@@ -1,0 +1,192 @@
+# LLDAP, the user directory behind Authelia.
+#
+# Authelia has no user administration of its own, and its file backend cannot have
+# any: the user database arrives from a Secret, which Kubernetes mounts read-only,
+# so Authelia can neither add a user nor persist a password change. LLDAP exists for
+# exactly this gap -- it is a small LDAP server whose entire point is the web
+# interface it ships with, where users and groups are managed in a browser and every
+# user can change their own password.
+#
+# Authelia speaks to it over plain LDAP inside the cluster. No TLS on that hop: it
+# never leaves the pod network, and giving LLDAP a certificate would mean teaching
+# Authelia to trust the private CA for a connection that Cilium already confines.
+#
+# sync-wave 1 namespace, 2 secret, 3 the workload.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lldap
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+---
+# The admin account is created from LLDAP_LDAP_USER_PASS on first start, so it
+# stays declarative in git while everyone else is managed in the web interface.
+# Read it back with
+#
+#   kubectl -n lldap get secret lldap-secrets \
+#     -o jsonpath='{.data.LLDAP_LDAP_USER_PASS}' | base64 -d
+#
+# Changing it later means re-sealing this secret: LLDAP resets the admin
+# password to this value on every start.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: lldap-secrets
+  namespace: lldap
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    LLDAP_JWT_SECRET: AgAR6kH3w1WypfajCotDs8iR5ElwHr8FnTJRvQph2rIkhoL1flAeIs5dk6q42N6lAuyYVKf3YPAo82qw3nfw65ZqKaaQuRdS0qcMIQLnz5vR3tzULwax7y7F/n9VQmxjFV/h3aaASpCVjjcfI3mlnQXlli490W/MNhYchRVOgbG7g8r6KZv2u4F3qPVlWL4Cdo10bBXpT+9nGU/OjI2Pr17I1FOxv3gzNusImee2jFsbp/ormIzFeAGlLYbJz28aaHMMT8oJxKYJ3dmPqEL9L0rVV5IeLgx7founIIrVp8syQlD6g01iiRYOcYmWZGLT2aoByjbtdxWQSJPU2Vt0hwNx8g9IQmaxC+VeMa0tEAM2vxWvo29KwW5Z3BweiEaQ2OFJFMLaQpYo7NzrmDt7VKKbSo0uO24DtMd9d+MN/S5wwgyTnisMN9iq0TZlDPn/RhHV5LqmCRMK16zdWqL07hAbsgJg+Bzashu/ubZ5fkf/8PYZwLXApeY3IKE9jkFXRVR49fGdtwIPkf3cEXKwUQS5TgmIDmD0RvKx3JTU2jGAzO50WxxEMkigmYhn8DD4lvccwJZLivHFZHMoBY/i0yCBfgKG8uyrTLkU6nggZTWsk2tu8Mxdua5vhqqdlwqVtKvRCfjSS6jBwIDeipDgv8eKainRjSq2od12bnV2ngfhtUQUYbpHfcHSbm9f63GzfLc7lHHptwa7a1/sqBkbjd3Ko7kbKTJBLSNrWTUN5ukQ99XnFXZ64GprKvuoMoGv3pup5V809+nUoSQcejfW5tZr
+    LLDAP_KEY_SEED: AgBKW40OYVVZTExtMe4YB3aqiHy/ey55sGXz/Xqxwm1lY/riVfGYN+TQXTa2Fr6eFvT3jNgkRFuOLIxgGMo6q9z7urXlW6+h1hXarw1fzpRUurubrS2igxrZUt3UfNoN0chzBogptrbIrhULU1ttKjXkxNZeJD4BATGhnJNopIRu7DKgb8TBwLotDh46+zYoQhrqAZG67T25PF/z9f91bWSXrFRe6KArJiCmXSe1RH4U1z22zXQhHP035CzYpeB/iPaD7fKSWnoDIaJFIU4pe4NXxH4fd54l5FXdK4Zz2pW4DszNsIi/tFEXLxaC5LnQQkXfIxUJWi0s7RZlJqXw/o+R+/umorFt8eJK3wYwhc9tAAAaZ+DgcZ7itpWIIXkcPjSQRAiuHQJ5azQA4JbDk21v62MPN9sANiLdGynprn16e/Ow53z7k3SrUTMiNB4YuoJ3fACyXeR08r9dyRA5qLubtPCf5mvWFvFC28B0Icc+dQVG8YtpZBEcfOUfYffGkT85R8bwgdIWZpdyBgezUiq4sdqIA0k5upnwYgOtaFNVStIluN/TrDrkEAno2Du++5HyMFYSTVtCKas43ipknS1mKpTXAI+H1sJr4F2Hp4g1UxTlfBl4hCoQH5gTYq7aTQualJkC5l1/UDmNPegC4rV7O7zWmnANJl8yzfPXV8hNxUp9AzLqUTfS1HrndGOqFzBgMGKuFJhFSNgvWq4Ygpd7xmJTSCFp5417n7hrgtQP1DBFPo1tvuMR1lcbIgzPyOOamtuYkLO+FSUGeHciNIeX
+    LLDAP_LDAP_USER_PASS: AgAmCsKc5J33ZBY1Rfdo5RDu1wuU+yu7w0Y/a+hEczZtQL+cN1nD5LTNsu+VB3Ipt3J+wKZnkGF9Pk78AvK5XJC5CBBFj7N45sIv4rrSVRst3bqqhNjpAwxZ/RCb1JJSgEElLqLBU7wTBP8vviLrpb/uzugG04575AL0oSXzlmS1aDjlu6wDRQ/+g/0R9uRT3kS/Y8V5MpXoX2GuXPhhFZiIqJ8pFcMghPYFhkE3Z8JbGgeoJdy8pnn0dtzTTGA1fwf8BxH96Qpe6J66SyyBsUyFEY/f1/jhxLS2EP5473LYphkB2GQG4L513ZDLyS0sbKqoBfPaxFjDIQpSDwbpUWcbqkeixYjO5uEVhne0g8MQ57nrnHUbi1iFmrCoD4WsLvmvMcqK5Y7dzzpH+9eOdqBLYDwJ+NlvNcByjhgW6OBbOWAITRn/+8T3//LeAaw/bR1pY8HvcHX6GjDvxBTksrIi+eSTvSG4uuYniaclXEXGJ/IbhTwayP7gZOmqdASeCnYuqRO8Gj0a8lb+ug4cwV/VyMfoO2N6jOq8ibT/yHAP08foMT/FFJGejBtwTcwVfQoXqEOWVBVh3TlQrg0hqONz8w0Lq5dl2+HCYWDuofJEmu1OYQnkVxrXdqvPftfQJOGCR/YmEiMgsMYxp315sIbHZ77mip9W7ozTef7FqXsM/KYucnY+c19XoBA0VaDo2ONAt7P3L0FJziJ3G77IBPUQyz/GGw==
+  template:
+    metadata:
+      name: lldap-secrets
+      namespace: lldap
+    type: Opaque
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lldap-data
+  namespace: lldap
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  # Replicated: this is the user directory. Unlike the monitoring data it cannot be
+  # rebuilt from anywhere, and unlike Authelia's own configuration it is not in git
+  # -- users created through the web interface live only here.
+  storageClassName: linstor-replicated
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lldap
+  namespace: lldap
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: one SQLite file on a ReadWriteOnce volume, so the
+  # old pod has to let go before the new one can start.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lldap
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lldap
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/storage-disk: ""
+      # fsGroup only, no runAsUser: the image starts as root on purpose and its
+      # entrypoint drops to the UID/GID below itself after preparing /data.
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: lldap
+          image: lldap/lldap:v0.6.3-alpine
+          env:
+            - name: UID
+              value: "1000"
+            - name: GID
+              value: "1000"
+            - name: LLDAP_LDAP_BASE_DN
+              value: dc=svc,dc=home
+            - name: LLDAP_LDAP_USER_DN
+              value: admin
+            - name: LLDAP_HTTP_URL
+              value: https://users.svc.home
+            - name: LLDAP_DATABASE_URL
+              value: sqlite:///data/users.db?mode=rwc
+          envFrom:
+            - secretRef:
+                name: lldap-secrets
+          ports:
+            - name: ldap
+              containerPort: 3890
+            - name: http
+              containerPort: 17170
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: lldap-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lldap
+  namespace: lldap
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    app.kubernetes.io/name: lldap
+  ports:
+    - name: ldap
+      port: 3890
+      targetPort: ldap
+    - name: http
+      port: 17170
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lldap
+  namespace: lldap
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    cert-manager.io/cluster-issuer: home-ca
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "Benutzerverwaltung"
+    gethomepage.dev/group: "Dienste"
+    gethomepage.dev/icon: mdi-account-group
+    gethomepage.dev/description: "LDAP-Verzeichnis hinter dem SSO"
+spec:
+  ingressClassName: cilium
+  rules:
+    - host: users.svc.home
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lldap
+                port:
+                  name: http
+  tls:
+    - secretName: lldap-tls
+      hosts:
+        - users.svc.home
