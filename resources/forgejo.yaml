@@ -150,6 +150,15 @@ spec:
               provider: openidConnect
               existingSecret: forgejo-oidc
               autoDiscoverUrl: https://auth.svc.home/.well-known/openid-configuration
+              # Without asking for groups Forgejo only ever sees openid, and every
+              # account it creates is an ordinary user. Authelia's client already
+              # permits these four scopes.
+              scopes: openid profile email groups
+              # Membership in this LLDAP group makes the account an administrator,
+              # re-evaluated on every login -- so administrator rights are revoked by
+              # removing someone from the group, not by remembering to do it here.
+              groupClaimName: groups
+              adminGroup: admins
           config:
             server:
               DOMAIN: forgejo.svc.home
