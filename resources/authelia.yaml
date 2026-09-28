@@ -234,6 +234,11 @@ spec:
                   authorization_policy: one_factor
                   require_pkce: true
                   pkce_challenge_method: S256
+                  # Forgejo sends its credentials in the form body. Authelia defaults a
+                  # confidential client to client_secret_basic and then rejects the token
+                  # request -- reporting a secret mismatch first, which is misleading; the
+                  # second message names the actual reason.
+                  token_endpoint_auth_method: client_secret_post
                   redirect_uris:
                     - https://forgejo.svc.home/user/oauth2/authelia/callback
                   scopes: ['openid', 'profile', 'email', 'groups']
