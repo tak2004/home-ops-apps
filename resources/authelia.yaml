@@ -1,0 +1,203 @@
+# Authelia as the OpenID Connect provider for this cluster, replacing Keycloak.
+#
+# OIDC only, deliberately. Authelia can also act as a forward-auth gate that puts a
+# login wall in front of services with no authentication of their own -- but that
+# needs the ingress to call an external authorisation service, and Cilium supports
+# neither the nginx-style auth-url annotations nor the Gateway API ExternalAuth
+# filter from GEP-1494 (cilium/cilium#45704). Only a hand-written CiliumEnvoyConfig
+# with an ext_authz filter would do it. So Hubble UI, Homepage, Prometheus and
+# Alertmanager stay unauthenticated for now; Forgejo, Grafana, ArgoCD and Headlamp
+# speak OIDC themselves and do not involve the ingress at all.
+#
+# Everything is generated with the Authelia binary rather than by hand: the random
+# keys with `authelia crypto rand`, the signing key with `authelia crypto pair rsa
+# generate`, and the password hash with `authelia crypto hash generate argon2`.
+#
+# sync-wave 1 namespace, 2 secrets, 3 the application -- the SealedSecrets name the
+# namespace and cannot wait for the Application to create it.
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: authelia
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+
+---
+# The four keys the chart knows about. Their names are not free: the chart
+# mounts exactly these under /secrets/internal and points AUTHELIA_*_FILE
+# environment variables at them, so a renamed key is simply not mounted.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: authelia-secrets
+  namespace: authelia
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    identity_providers.oidc.hmac.key: AgCnH+7KHenGWHVEBG85AP5iLzYFd6NN44H+vpSLQ7BkHsK8OEmWUmQj9wDY4tUJYKYpCGYDfWG/bIt4V4KMOoo9BdScdE+Zx4oXMwPl0OwZBlINvSMUR29FLex9S3lmNZRDslF7z2wVY4wKQ6vVTcao54vDn9fIzn6hLmlNKEhECbRrEkoEK9/bqMnv11LIK52SpRSYCTE8VZ2yOxHBKAbDD6oPX35Fy2T4WfWPXmezDppCoAENTNZP0XRunuAKyOGJzLLmY1SLlvvYAxOiNTXD/xtu0szx2wmX0368tKvC5wW8+nLOUrWJC5z96Px85lVXYp6+2ei1Rp6wmfCDa3m6RvAzndY2xdhoTLJKjbNSlLLp4bxV4/6Fvc7btwR0Ve3PFilpa7wNloRWkdHhBc0x84+dzfKoHu85xcR1QB2E5tz47J3oxQfs2PtjmF8VXxMUxJD3uPytAsgSNHY+MH80UMCzuVn8R+7f3zlX7IUsfS6RXEHo+54RT2mLCsqe70jAINOimas7234SyJAJfMSfQ19bkPwNvzmpeAsxsBPaMRTLAOYD9dZsbSgSb9y82YlCHV5ScwxIgY05XEFOy6yTdmMQVH84KFDr8RuD8esXS87tJdG0T0KQM1M+8LxXo/3Fwgvu/OrC7SDL54wahQpnKJdmiNHBdTumT8e081hX8Fcbldt1/LavAalsBhD/srToQXYjQoUKuU4tb/2sec5rpanxH4dqK0Ku6avvicLoklXjkTNvxQdFEd4yzVhvSDi45PFzuWZA+C1VLo4YebAQ
+    identity_validation.reset_password.jwt.hmac.key: AgAgLW3lQhhQO5Hm6Gjt9VBnF9w2tCFQVz+Z/AaxuWcr7wkU8XNQDTesxLmMvvlV+rafZKj3l+XcZ8+si+WHrkfSBbz2XqLQAYaNnTwqTabSD+teggyhmx207V7dBqWIaNaMSdQvJXRjdkYPk8SRNp3sUkzzVUhE7n3CP3nD2ZOTyBAz7xMf3De6akPOJo02Hv/oeHFD4b2SqqLbQZVG0grl5K7REdTI/vnycjZLuEPAO/J3S2Bdz/dPCm44x1iPtdVT0CdXae+3gNqd1HUCcbfMBQVt1lbNLwQgtOpuIdn2o2apjSMk5qlm/4WWd7O11TACXFCY/UFuQ8SnuK8Mq2hFWjRsFFPmHLnCuvfO0a7g/8pbkdORX2xqRpCHD9r1c2FzktpGhkoOVK1e5jPbYnb3UIkuROLZKvCh3csg94S54MBbZ5voEpKC6a/2eJSddCitYY821YZar1oiWLdT30MlmCsW4keS22ZUXHQCq7Ty/yxXqTxgVkEi4/mf+TDL0rbwGcARgG6xXgjdCTPEFdKuEkcmKiWwvBJPx6/LAUKGLmI9I8+F5mckNOBdV7OqIXSiP5JdVoobjNhg1wpy9ow1TQ3KnBM3wHwWabFykUnTYv1JeZ0lMo3Yllrj6Ovc0I42Xazgo0pdPD8d4Epx0OWTYqrEYWUw9j4DakWtAiS98Qyne1VlXKJ2wPVsWSYM0Bp7y/e59R2d83maUfBBRlG0Fw9mpBKl2tqTMWWu2tBs0t+1g9nT+94bI884OhAn6r2a6HjTCANOou3b1KIUCl/K
+    session.encryption.key: AgBSh9hrxXuCqoguw5SsFw9pHLp9dgbE/6L4Ba9CpaP38QKc3gDL+ijWOFxbDwDVVE6qWMNCH5EWYo+2WhkBDkjIDSRzezmzYm2xliDGBDn5DD2YLCBjgf0nv6nHFuRuYscKs++GYyqM7NAvYdsfod/WXUujm/ogNS2QrqMhQQ2NgyucKdhfiUAM1bS3W3V47Msrwr786XND2e7fC4tUSa0Eze1idNsjatpO3Xk1n124kGhTa8tL4tBSkeBxT9o0Sm2f2drY8sLDJBeDQc+n8XmU4zkF3bcgzx8V9o9XQHa1ZCqyZzHyBE3u7bu3paME6exi/LtZ9sUTveSM2xV26zlxzTNKQKtmkJt57Li8hjVpCSBoL5szyupXh90a55G++woDlHzTB8IAGj7vgJ9Rd5jaD39KgS8GQ4Q2D2AioeXIZvDgXfBWYQ1szMW9PyMtX/2jccFJIH3vMd10gQt8EOV084PqlKOwDT7NZubc2wYejwbetaJOVNAyWJoFO913CAc4ALbQgamXLVLiNg8Sl9WjN/Gkyeh/ghpOMhXFrhWxF5wmcNDHGUo+Pkyiq56CwxhoH8Jlyn3atlJocvtVgYGGgZI4gJpW5rcRwVIUSxVcVsv27FDV1CtKvvnMTYZh7cJ/aCEZEddWVJIyjMzcMFYh/n/q5opkz1J+WcCvsIM/ue//vEef785D55833C2Bzub1RBb3rvI5V0prnFm3xcvNTkkhgfsyVb2AX6zLaqSuy9sZpeAF9jk2bly0Ed1mEbFYrgn94pGjPyAQUWGx2HRj
+    storage.encryption.key: AgA/78bXSIj/CQx0gy15VE0KQHzKoptHyRLDSwgsJGUPlYsx/ptg8wljLHNG7WipZavN+zU2J2RjI391M7ON+RuJD5kacEwiAJuJCGMXbUVa2deVaZl++nDDbwnn1HqrFRRrwIkDFZh6++WjLYDHpOUpqxe1p2uh94wurLSXCQOQ1j6kzBW5tR4GPAxahjnHRmaPgr3MBJgwrAoMLVjhh3hHX60nkvXdfIuh4/Ii2oWBQwEiynZGT9qbt7duIaEnt7q8FvOCevUKPBdD7MFxTABL6rH80PdqCjbbseF1eAC1LIDd/ruKjfW7hO0d1ncOm5gqRvFKtZVv08JsEDG/j4AJ73SlPm+uKk0RELvd/xqDuyFqM4UbHxIzmbCQlGbId4T6HFTVYw8ftLXl4Kjqky2qvYp+Qb6ppQTssvD9wOoI0NnUheA7n3d6CYDMspiPu6n0CdoJjNS0h7tJsFLE+oO4jiHe28zY6laXLbVf8uakDmm7sE0kuTgxLMNVedixqN1DeZ7jiN7pn0UVZEiGxjy8gY5t4ulJPO5Fj1azgBDn2ocua3zfMUdO2wDK4aX5UnK2ChHf6R2J+zrlz8j+EDIM5nlVx7YUpC37rh0SqgQ9ffzGrODpvDnLcbKlVi7TazEX4hORXXOd8eiMEPO8BixZnuX/b84UQUgCZsHQoi+JoYlLpUUIwVODQM/QU6rp1pGFnd6jXWzfz1i7B/lwf+FtvhRFtoqoPyNgqK8kaC6SgaHCkVxiowf62FTSoCBTFwEE4zEbrCf55Cf8vQleMLvM
+  template:
+    metadata:
+      name: authelia-secrets
+      namespace: authelia
+    type: Opaque
+
+---
+# The RSA key that signs OIDC tokens, in a secret of its own. It cannot live
+# in authelia-secrets: the chart builds that volume from a fixed list of four
+# items, so any extra key there is silently left out of the pod -- the config
+# would reference a path that does not exist.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: authelia-oidc-key
+  namespace: authelia
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    oidc.jwk.RS256.pem: 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
+  template:
+    metadata:
+      name: authelia-oidc-key
+      namespace: authelia
+    type: Opaque
+
+---
+# The user database. The chart only configures a path to it and never supplies
+# the file, so it is mounted separately. Passwords are argon2id hashes.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: authelia-users
+  namespace: authelia
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    users_database.yml: AgDN+KVPgUe9j9D8gvSAUG0l4Jk1/6bZI/VFiMi3jFavSoLrNtTpOcHZP/JhqVETPCGIVR7o6y9YaNjyc7rg9SRebR3UYTtimHCQQZVCMTBh8435WFgrxVjwhEUdttFOcBhvmQDLHMRLdkkkCQvg5DvpjR6D3pzfJqnE1GwlOsgRMeKybefJ2WTIECphfNzyjHYZpm7W6GRK5HH7GSdiXAl5BvxShghyOpJzug3nOaq/w7/I/qMI5TLs3rWBh18uQXo6HDPKtn4wTw+MwIJf4zft0J7Dg1VROCQamS7x5olY55vtQFumh2pL2iaMkebxrZl53cjVUEmbAQeifS7BK+NKcCt+mU7Ej6cIKlb0EQEZBFvyR2kGz/bll9NWEwWDe45prsCZnfUP8gEqEZHGiaABzdhpHiFpTqB/ninKZ5kIBJQKN0bhy4uHhzSqmYZL//9DITjd/ZSwMUyGUJ0eEmRlsoNyjXmGYts+ItoUwjSFal6al/bpe14PSf1jcxzZswYuJBb97SdfxkJxHOHQIMIRAEuKFA7yFEAOtsVsCQwf2/H4inP1I4iPFHoPLcn1p+OR49CdVaRwrDh428kg1XGi0NdSBd7aVZKMl81tv+9VLZH2fti0xeT7ZmIomgYaoJkfuHDayDvFuHEtCdlQo1muLi95L6/QrqBW3S34236rksYLG4fC3TKuYqSnlXrQdQ0MtuY3+pE0KKWu+URP2obmko946wtu7B6DbCkXiS/wu9ow2bIedSaLVCWh+C5OKh0WBo1bYMNo7h51UrSBYGIKzPW173ABAFdiY14QW1rMAZhomiOYF1eoQet4u2+l+DWVe4rDzn1icuSH+nhKJo71gTVhBRLNBMXRQajcHw9wBaI8mOMfQHsC8bHdwt1xJzv9M1OFqSAu7NErW+u2gAPOAH1lIAB4KMxF1wbOIL+V2Tj0Uu1xqnVj5SE37pINEQt/5cwzkCjqkYws5OMy3mW5hXiNrLm1+wNNI2qNz8IKwrsOfpdUww7nMm+f
+  template:
+    metadata:
+      name: authelia-users
+      namespace: authelia
+    type: Opaque
+
+---
+# Mounted nowhere -- it exists only so the generated password can be read back:
+#
+#   kubectl -n authelia get secret authelia-initial-password \
+#     -o jsonpath='{.data.password\.txt}' | base64 -d
+#
+# Delete it once you have changed the password in the portal.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: authelia-initial-password
+  namespace: authelia
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    password.txt: AgB3VFCCgLahQyXqoQXy7VFaRy4eKyUwueZyEuwJlPrliGsNKWqAyCSYVZFqad4JmfCZe/jLTOCB40xJFX08h/U8HDbIFNxiH5utaQofAcyvltq/onFzkesU9Ylu+/08Nf2ATYAXZeNaQW1y/VqU9hPmkfj+/9rkLZ09gDt+sRxTN9X0CA/GUfj9igklpc4bRFYt47y8/2WlHDvVBIh1jjL5u1Mefsibxrhhefn4fvdDQ/jrt2bUbgdgDmjrNXcPtwh3n0iAWJ+DBlOySnxBlJ3gaLIeRzhwaQFtqtn4tmI34y0WLP69rLYNhannNff/2H91EwRpk2g7+l+9zaNeEN9/ZZ0LteTaiUx1N/4WaL1jnH8Q7YW2qspFHeC5h9CKS5FK70NYrJdngdlA1+4t96n8Zmgsjn5ieDM+3ldoMA0a54TCxrAKy8gtWrdMpHv9IVXR5IBadyT08Pz6ODJ/J7heX5oIIhTs1dP25BWowC4tG1WbZOPkfcIEOONBLMU5jTxHj9Oe/SWmluPEEvhgAhQcKCP7qYljhQ7sNeXPOv8Nq6WOu/L2kZ/pE3lbCw56gIlUxNTsf5QUCDcYOJCDKaEEVkToaD7JF+SkSzDCvkBGcSI5epFYzMc4Im0hFlG4exw1R8YEH+oAAaLTXmngxiZKjY07TE0KI/0Q/x2oVCSSgyCOqUGDFe8py+lPPjx/nkdAI46ay16ntAxliXcFhb8SJ48Xqw==
+  template:
+    metadata:
+      name: authelia-initial-password
+      namespace: authelia
+    type: Opaque
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authelia
+  # argocd, not the destination namespace: ArgoCD only reconciles Application
+  # objects in its own namespace unless application.namespaces is configured.
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  source:
+    chart: authelia
+    repoURL: https://charts.authelia.com
+    targetRevision: 0.11.22
+    helm:
+      valuesObject:
+        pod:
+          kind: Deployment
+          replicas: 1
+          selectors:
+            nodeSelector:
+              node-role.kubernetes.io/storage-disk: ""
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+        persistence:
+          enabled: true
+          storageClass: linstor-replicated
+          size: 1Gi
+          accessModes:
+            - ReadWriteOnce
+        secret:
+          existingSecret: authelia-secrets
+          additionalSecrets:
+            authelia-users:
+              path: users
+            authelia-oidc-key:
+              path: oidc
+        ingress:
+          enabled: true
+          className: cilium
+          annotations:
+            cert-manager.io/cluster-issuer: home-ca
+          tls:
+            enabled: true
+            secret: authelia-tls
+        configMap:
+          theme: dark
+          default_2fa_method: totp
+          authentication_backend:
+            file:
+              enabled: true
+              path: /secrets/users/users_database.yml
+          access_control:
+            default_policy: one_factor
+          session:
+            cookies:
+              - domain: svc.home
+                subdomain: auth
+                default_redirection_url: https://home.svc.home/
+          storage:
+            local:
+              enabled: true
+              path: /config/db.sqlite3
+          notifier:
+            filesystem:
+              enabled: true
+              filename: /config/notification.txt
+          identity_providers:
+            oidc:
+              enabled: true
+              jwks:
+                - key_id: main
+                  algorithm: RS256
+                  use: sig
+                  key:
+                    path: /secrets/oidc/oidc.jwk.RS256.pem
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: authelia
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
