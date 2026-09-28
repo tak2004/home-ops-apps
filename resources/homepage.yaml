@@ -97,6 +97,9 @@ spec:
               Cluster:
                 style: row
                 columns: 3
+              Dienste:
+                style: row
+                columns: 3
               Infrastruktur:
                 style: row
                 columns: 3

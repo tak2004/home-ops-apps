@@ -1,0 +1,141 @@
+# Forgejo, running alongside the existing instance on netsvc-3 rather than
+# replacing it. Nothing is migrated here: this is an empty forge on its own volume,
+# so both can run in parallel until the move.
+#
+# SQLite, not PostgreSQL: chart 17 carries no database dependency, a home forge has
+# no concurrency to speak of, and the later migration is then a directory copy
+# instead of a dump and restore. It does tie the deployment to one replica, which
+# the chart already assumes -- its update strategy is Recreate.
+#
+# Git over SSH is off for now. Cloning works over HTTPS; turning SSH on later means
+# a LoadBalancer IP of its own plus a DNS record, and nothing here has to change for
+# it.
+---
+# Explicit, and in the first wave: the SealedSecret below names this namespace and
+# would fail to apply if the Application created it only during its own sync.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: forgejo
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+---
+# The admin password, encrypted to this cluster's sealed-secrets key. It was
+# generated at random and never written down anywhere else, so read it back with
+#
+#   kubectl -n forgejo get secret forgejo-admin -o jsonpath='{.data.password}' | base64 -d
+#
+# Note that this ciphertext is bound to the controller's current key AND to
+# forgejo/forgejo-admin: it is unrecoverable if the cluster is rebuilt without
+# restoring the sealed-secrets key, and it cannot be moved to another namespace.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: forgejo-admin
+  namespace: forgejo
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  encryptedData:
+    password: AgAKbdoeYGFeD98LMHPFHfP5duugKURFtAX2Wre3cvFIfq39QfsaN925mOnbrIKsF+IXc941bTP5tlkvgn5jtlwQ1+eoqZgpRvJcTLwQqX/zFn4Eiok5kZRL7/9ptNegY0wJmR7DrL6ZxBviYOVSKwjybI4RGGUp5Tatyy/nFkwar9F1eVnZQoy15Tn8STWPPWdcr36MpLrFJTBtFzFO1JCXhbOV+x7TklkGSNp09NViuy5Nc+OfSCth9ESg/oIj1dujf4VCQFcuuHL5dukgbwZ4f3EUBOALskYekNJagrEqHb6Y2y+lekhowyuHAXF1rhZp10Qom0js4Zg+I5oqph7tkhOC1vJPOxVVz0dKJSaH2KdH+r3qRKiLUdqhcdHIrwC5yNz1sCRgFEDw5VueqU9vpB0f5Z0bhHKnMiIiiBFnUJ/FR8e7xfyzw1YKDzA68ViZ5dtXreeNOZ/EhRdVa3tXXLfmjU+od4rFHQ+bKZQeZFusWx8+eYwlaRQpe5qpziSGaHpssF++TpjA/9hkKLPM4cM55XCIElH6jMZG0GdPJgYOEE07Qjqom6y6N0sgn8FCbaepyni0SXmFiHgG5fet1019pzK0LTU4aE6q2VL/MSTIVA6f+HpIM0vgyiRmp7evMVMXRkkJmUACuGYSrYoSN7FvFxlFPld72h0FxwpSXhdz2DByJeS399MtxhpKwGvTBLjrMppQquvN5xzedFs69YNllBeJuUU=
+    username: AgAVQ2ekMz4Z7aaajMNV0p4BWgCuPhWmCAMBZZsTtkbX27n8d3TBEyDmLdjJGhka1hTXidur+7XkCOwGInqFlxyceXJcgMfrAMGU1LkuhQF6lKExIyX89Y9uwfgIoqABTEDb2s67gI7N1oZYLi1/LopQqxSlzgUOb/7UMZiB6hbykeWZ+L2ufWvWTOFXCCuy6maFkDIH7Xyajes0j2p7ulxToRNm2zGeU1mdT8/ss6VfyDKtT0gKI0boKVwRNadUeGd9WTcwKlAxvdmF5zzmzF9Bkl5+MwnTRX/pLU2xuJm8Xk14LvhbUWunfcVu3rJH6EbAtf+d965B6IOG81Wz1nfk0npAAAAl/26nJc0PdkEbe27VOIieAYAIbwR86nbVFS3azPAT0Ei9M69JHr9gB5yBp9zhyR6JTKUPlpPzF8Ax6jKnfI7YDPQaAAyBQ5HcO4CDtD/24egygpyPTZNxQHzm0JZpDYlRVNKAdkduk1mM77D63mbFFr6/sd5rxy/qEPeudo6gc+nR9F9Yh1TqA/fQHZYCA1A4bSbex32wAM7qWZ4aTJQ65embPFfcCxg/V71a8qyByhN4hu4nygRPH+Q55D3zr1pKVIGXHlAXWGshns08InNTOdtFWVzSqa5grF5eHMyr1co6p6fhGm988XOAP+eEas7SP89PjTBxbysYSd26raugbt3tdQxEbhoK8yoWYabSMb4lcGSrpp5A
+  template:
+    metadata:
+      name: forgejo-admin
+      namespace: forgejo
+    type: Opaque
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: forgejo
+  # argocd, not the destination namespace: ArgoCD only reconciles Application
+  # objects in its own namespace unless application.namespaces is configured.
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  source:
+    chart: forgejo
+    # An OCI registry, deliberately without the oci:// prefix -- Argo rejects it in
+    # repoURL. The chart is published nowhere else; the classic Helm repository at
+    # code.forgejo.org serves no index.
+    repoURL: code.forgejo.org/forgejo-helm
+    targetRevision: 17.1.7
+    helm:
+      valuesObject:
+        nodeSelector:
+          node-role.kubernetes.io/storage-disk: ""
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+        # Replicated: repositories are the one thing here that cannot be recreated
+        # from anywhere else. The claim is named gitea-shared-storage by the chart
+        # and carries helm.sh/resource-policy: keep, so neither a prune nor an
+        # uninstall takes the data with it.
+        persistence:
+          enabled: true
+          size: 20Gi
+          storageClass: linstor-replicated
+          accessModes:
+            - ReadWriteOnce
+        service:
+          http:
+            type: ClusterIP
+          ssh:
+            type: ClusterIP
+        ingress:
+          enabled: true
+          className: cilium
+          annotations:
+            # cert-manager issues the certificate from the private home-ca.
+            cert-manager.io/cluster-issuer: home-ca
+            # Picked up by the homepage dashboard, which reads ingresses itself.
+            gethomepage.dev/enabled: "true"
+            gethomepage.dev/name: "Forgejo"
+            gethomepage.dev/group: "Dienste"
+            gethomepage.dev/icon: forgejo.svg
+            gethomepage.dev/description: "Git-Forge"
+          hosts:
+            - host: forgejo.svc.home
+              paths:
+                - path: /
+                  pathType: Prefix
+                  port: http
+          tls:
+            - secretName: forgejo-tls
+              hosts:
+                - forgejo.svc.home
+        # The chart's connection test renders a plain Pod with no helm.sh/hook
+        # annotation, so Argo would apply it as an ordinary workload that runs once
+        # and then sits there Completed forever.
+        test:
+          enabled: false
+        gitea:
+          admin:
+            existingSecret: forgejo-admin
+          config:
+            server:
+              DOMAIN: forgejo.svc.home
+              ROOT_URL: https://forgejo.svc.home/
+              # Both, not just the first: DISABLE_SSH only stops Forgejo offering
+              # SSH clone URLs, while START_SSH_SERVER keeps the built-in server
+              # listening regardless.
+              DISABLE_SSH: true
+              START_SSH_SERVER: false
+            service:
+              # This forge is reachable by anyone on the home network.
+              DISABLE_REGISTRATION: true
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: forgejo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
