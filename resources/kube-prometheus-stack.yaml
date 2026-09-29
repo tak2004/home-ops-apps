@@ -152,6 +152,11 @@ spec:
                 name: grafana-oidc
                 key: client-secret
           grafana.ini:
+            log:
+              # Only this logger, and only until the role mapping is settled: it
+              # writes the claims actually received from Authelia, which is the one
+              # thing that cannot be observed from outside.
+              filters: oauth.generic_oauth:debug
             server:
               root_url: https://grafana.svc.home
             auth:
