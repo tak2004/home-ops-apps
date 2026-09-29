@@ -16,6 +16,20 @@ spec:
         # Reached through the shared cilium-ingress, which the *.svc.home wildcard
         # in bind9 resolves to. No dedicated LoadBalancer IP and no DNS record of
         # its own are needed.
+        # Knative ships no web interface of its own -- only the kn CLI -- so the
+        # Headlamp plugin is the way to see Services, Revisions and routes in a
+        # browser. The sidecar installs it at startup and watches the config, so a
+        # version change here does not need a pod restart.
+        pluginsManager:
+          enabled: true
+          configContent: |
+            plugins:
+              - name: headlamp_knative
+                source: https://artifacthub.io/packages/headlamp/headlamp-plugins/headlamp_knative
+                version: 0.3.0-beta
+            installOptions:
+              parallel: true
+              maxConcurrent: 2
         service:
           type: ClusterIP
         ingress:
