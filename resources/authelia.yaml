@@ -281,8 +281,9 @@ spec:
                   client_secret: '$pbkdf2-sha512$310000$KrAGMfuryvIMPlO2EFQQjg$m3rzXOgVyvysV9FbKy8WnCKfRYTQtYZK4hA2s/ryhL38.4NhF5jJFGx0ZN1oNZY0iB/fxmsVRgRUCXfpApYRgw'
                   public: false
                   authorization_policy: one_factor
-                  require_pkce: true
-                  pkce_challenge_method: S256
+                  # No PKCE here, unlike Grafana and Forgejo: Argo authenticates as a
+                  # confidential client with a secret and sends no code_challenge, so
+                  # requiring one rejects the authorize request outright.
                   redirect_uris:
                     - https://argocd.svc.home/auth/callback
                     # The CLI opens a local listener and sends the browser back to it.
