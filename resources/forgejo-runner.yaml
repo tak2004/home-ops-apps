@@ -234,6 +234,13 @@ spec:
             # exists to permit.
             seccompProfile:
               type: Unconfined
+            # And containerd's AppArmor profile denies the namespace outright. The
+            # kernel says so plainly:
+            #   apparmor="DENIED" operation="userns_create" class="namespace"
+            #   profile="cri-containerd.apparmor.d" comm="podman"
+            # A GA field since v1.30, so no annotation is needed.
+            appArmorProfile:
+              type: Unconfined
           env:
             # The kernel overlay driver needs privileges Podman does not have here;
             # the FUSE implementation is the point of mounting /dev/fuse.
