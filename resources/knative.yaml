@@ -90,6 +90,18 @@ spec:
       # Its own subdomain rather than svc.home, because Kourier needs an address of
       # its own: *.svc already points at the Cilium ingress on .20.
       kn.home: ""
+    # Metrics are off by default in 1.23 -- metrics-protocol defaults to 'none', and
+    # the metrics port on every component then serves nothing at all. Measured: zero
+    # lines from activator, autoscaler, controller and webhook before this.
+    observability:
+      metrics-protocol: prometheus
+      # The queue-proxy sidecar, which is where request rate and latency per Knative
+      # service come from. Without it only the control plane is visible.
+      request-metrics-protocol: prometheus
+      # 60s is the default; at 30s the numbers line up with the scrape interval
+      # Prometheus uses for everything else here.
+      metrics-export-interval: 30s
+      request-metrics-export-interval: 30s
     autoscaler:
       enable-scale-to-zero: "true"
       # Short, because the point of this cluster is that idle costs nothing.
