@@ -176,6 +176,11 @@ spec:
               # only through Authelia.
               DISABLE_REGISTRATION: false
               ALLOW_ONLY_EXTERNAL_REGISTRATION: true
+            # Off by default, which is what a registered runner sees as
+            # "failed to fetch task: unavailable: 503 Service Unavailable" -- the
+            # endpoint it polls simply does not exist until this is set.
+            actions:
+              ENABLED: true
             oauth2_client:
               # Creates the account on first login instead of asking.
               ENABLE_AUTO_REGISTRATION: true
