@@ -159,6 +159,10 @@ spec:
               filters: oauth.generic_oauth:debug
             server:
               root_url: https://grafana.svc.home
+            users:
+              # What everyone gets who matches no group above. Read access rather
+              # than none, so a new account is useful the moment it exists.
+              auto_assign_org_role: Viewer
             auth:
               # Ends the Authelia session too, instead of leaving one behind that
               # signs you straight back in.
@@ -177,10 +181,20 @@ spec:
               groups_attribute_path: groups
               use_pkce: true
               tls_client_ca: /etc/grafana/ca/ca.crt
-              # LLDAP puts everyone who may administer the directory in lldap_admin;
-              # 'admins' is there for a group you create yourself. Anyone else gets
-              # read access rather than none, so a new account is useful immediately.
-              role_attribute_path: contains(groups[*], 'lldap_admin') && 'Admin' || contains(groups[*], 'admins') && 'Admin' || 'Viewer'
+              # No trailing || 'Viewer' here, deliberately. Grafana evaluates this
+              # against each source in turn and keeps the first valid role it gets,
+              # and the ID token comes first -- it carries no groups claim at all,
+              # so a fallback inside the expression resolves to Viewer before the
+              # UserInfo response with [admins] is ever consulted. Measured in the
+              # debug log: groups arrived correctly and the role was still Viewer.
+              #
+              # Without a fallback the expression yields nothing for the ID token,
+              # Grafana moves on, and UserInfo decides. Everyone who is in neither
+              # group falls through to auto_assign_org_role below.
+              #
+              # LLDAP puts directory administrators in lldap_admin; 'admins' is for
+              # a group you create yourself.
+              role_attribute_path: contains(groups[*], 'lldap_admin') && 'Admin' || contains(groups[*], 'admins') && 'Admin'
           sidecar:
             # searchNamespace: ALL is the part that matters. By default each sidecar
             # only watches its own namespace, so a dashboard shipped next to the
