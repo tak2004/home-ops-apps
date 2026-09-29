@@ -1,0 +1,64 @@
+# Knative, by way of its operator rather than the release manifests.
+#
+# The alternative would be copying serving-crds.yaml and serving-core.yaml into this
+# repository -- some 930 KB of generated YAML that has to be replaced wholesale on
+# every upgrade. The operator is a small chart, and what it installs is then
+# described by a KnativeServing resource that fits on a screen.
+#
+# Kourier is the ingress, not net-gateway-api: the Gateway API CRDs are present
+# because Cilium installs them, but Knative's Gateway API support expects features
+# Cilium's implementation does not fully provide. Kourier is what Knative ships and
+# tests against.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: knative-serving
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: knative-operator
+  # argocd, not the destination namespace: ArgoCD only reconciles Application
+  # objects in its own namespace unless application.namespaces is configured.
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  project: default
+  source:
+    chart: knative-operator
+    repoURL: https://knative.github.io/operator
+    targetRevision: v1.23.1
+    helm:
+      valuesObject:
+        knative_operator:
+          knative_operator:
+            # No tolerations, so these never land on the backbone SBCs -- those
+            # carry the control-plane taint and 2 GB of RAM.
+            tolerations: []
+            resources:
+              requests:
+                cpu: 50m
+                memory: 100Mi
+              limits:
+                memory: 512Mi
+          operator_webhook:
+            tolerations: []
+            resources:
+              requests:
+                cpu: 50m
+                memory: 100Mi
+              limits:
+                memory: 256Mi
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: knative-operator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
