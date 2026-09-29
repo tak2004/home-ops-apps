@@ -116,3 +116,55 @@ spec:
       replicas: 1
     - name: webhook
       replicas: 1
+---
+# The control plane. Every component carries the same label and the same port name,
+# so one selector covers activator, autoscaler, autoscaler-hpa, controller, webhook
+# and the Kourier controller.
+#
+# Note that turning metrics on is not enough on its own: the exporter is built at
+# process start, so the components have to be restarted after config-observability
+# changes. Measured -- zero metric lines until the rollout, hundreds afterwards.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: knative-serving
+  namespace: knative-serving
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  namespaceSelector:
+    matchNames:
+      - knative-serving
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: knative-serving
+  endpoints:
+    - port: http-metrics
+      interval: 30s
+---
+# The queue-proxy sidecar, which sits in front of every Knative service and is the
+# only source of request rate and latency per revision. A PodMonitor rather than a
+# ServiceMonitor: revision pods come and go with scale-to-zero and have no service
+# of their own carrying this port.
+#
+# 9091 and not 9090: the sidecar exposes http-autometric on 9090, which serves
+# nothing, and http-usermetric on 9091, which serves the request metrics. Verified
+# against a running revision rather than assumed.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: knative-queue-proxy
+  namespace: knative-serving
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  # Any namespace: Knative services are deployed wherever their owner puts them.
+  namespaceSelector:
+    any: true
+  selector:
+    matchExpressions:
+      - key: serving.knative.dev/revision
+        operator: Exists
+  podMetricsEndpoints:
+    - port: http-usermetric
+      interval: 30s
