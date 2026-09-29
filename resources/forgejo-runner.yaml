@@ -1,14 +1,15 @@
 # A Forgejo Actions runner, in the shape GitLab's docker executor has: the runner
 # reads the image named in the workflow and starts a container per job.
 #
-# That needs a Docker API, and this cluster runs containerd -- whose socket speaks a
-# different protocol -- so the daemon comes as a sidecar. Docker-in-Docker needs
-# privileged: true. There is no honest way around it: rootless dind still wants
-# CAP_SYS_ADMIN with unconfined seccomp and AppArmor, which buys little over the
-# privileged flag it replaces. The alternative, act_runner's host executor, avoids the
-# privilege by running every job directly inside the runner container, where a
-# workflow can read the registration token and any mounted secret -- worse, not
-# better.
+# The engine is Podman, not Docker-in-Docker. Podman cannot drive containerd -- it
+# has its own daemonless stack -- but it serves the Docker API, which is all
+# act_runner needs, and it does so rootless. That matters here: docker:dind requires
+# privileged: true, and this pod runs on the nodes that also carry LINSTOR. Podman
+# needs SETUID, SETGID and SYS_CHROOT plus access to /dev/fuse instead, which is a
+# considerably smaller grant than the whole kernel.
+#
+# Checked on both netsvc nodes before choosing this: /dev/fuse is present,
+# kernel.unprivileged_userns_clone is 1, and the cgroup hierarchy is v2.
 #
 # On the resource model, which is the point of this deployment:
 #
@@ -19,11 +20,11 @@
 #
 #   A container that reaches its memory limit is killed by its own cgroup, not by the
 #   node. The host is safe because the limit exists; the danger is a pod without one.
-#   Job containers are children of the dind daemon and share its cgroup, so the limit
-#   on that sidecar is the ceiling for every job at once, however many run.
+#   Job containers are children of the Podman service and share its cgroup, so the
+#   limit on that sidecar is the ceiling for every job at once, however many run.
 #
 #   Disk is bounded the same way. The image store is an emptyDir with a sizeLimit, so
-#   it occupies nothing until a build pulls something and the kubelet evicts the pod
+#   it occupies nothing until a build pulls something, and the kubelet evicts the pod
 #   rather than filling the node's root filesystem. Only the registration state is on
 #   a claim, and only because losing it on every restart would leave a trail of dead
 #   runners registered in Forgejo.
@@ -70,8 +71,8 @@ data:
     log:
       level: info
     runner:
-      # Two jobs at a time. They share the dind sidecar's memory limit, so this is
-      # the number to lower if builds start being killed rather than the limit to
+      # Two jobs at a time. They share the Podman sidecar's memory limit, so this is
+      # the number to lower if builds start being killed, rather than the limit to
       # raise.
       capacity: 2
       timeout: 1h
@@ -85,11 +86,9 @@ data:
       enabled: true
       dir: /data/cache
     container:
-      # The job containers attach to the network the dind daemon manages.
       network: bridge
       privileged: false
       options: ''
-      # Where the repository is checked out inside the job container.
       workdir_parent: workspace
 ---
 apiVersion: v1
@@ -100,14 +99,15 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "3"
 spec:
-  # Small and replicated: this holds the .runner registration file, nothing else.
-  # Without it every restart registers anew and Forgejo collects dead runners.
+  # Small and replicated: this holds the .runner registration file and the cache,
+  # nothing else. Without it every restart registers anew and Forgejo collects dead
+  # runners.
   storageClassName: linstor-replicated
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
+      storage: 2Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -132,6 +132,11 @@ spec:
     spec:
       nodeSelector:
         node-role.kubernetes.io/storage-disk: ""
+      # Without fsGroup the freshly provisioned volume belongs to root and the
+      # runner, which does not, fails registration with
+      # "failed to save runner config: open .runner: permission denied".
+      securityContext:
+        fsGroup: 1000
       initContainers:
         # Registration writes .runner next to the config. It is skipped when the
         # file is already there, so a restart does not produce a second runner.
@@ -181,13 +186,11 @@ spec:
           command: ['forgejo-runner', 'daemon', '--config', '/config/config.yaml']
           workingDir: /data
           env:
-            # The sidecar below, over TLS on the loopback they share.
+            # Podman's Docker-compatible socket, on a volume both containers share.
+            # A unix socket rather than TCP, so there is no TLS to set up and
+            # nothing listening beyond the pod.
             - name: DOCKER_HOST
-              value: tcp://localhost:2376
-            - name: DOCKER_CERT_PATH
-              value: /certs/client
-            - name: DOCKER_TLS_VERIFY
-              value: '1'
+              value: unix:///run/podman/podman.sock
             - name: SSL_CERT_DIR
               value: /etc/ssl/certs:/etc/ssl/home-ca
           volumeMounts:
@@ -196,12 +199,12 @@ spec:
             - name: config
               mountPath: /config
               readOnly: true
-            - name: certs
-              mountPath: /certs
+            - name: podman-socket
+              mountPath: /run/podman
             - name: home-ca
               mountPath: /etc/ssl/home-ca
               readOnly: true
-          # The runner itself only orchestrates; the work happens in the sidecar's
+          # The runner only orchestrates; the work happens in the sidecar's
           # containers, which is why this limit is small.
           resources:
             requests:
@@ -209,22 +212,44 @@ spec:
               memory: 64Mi
             limits:
               memory: 512Mi
-        - name: dind
-          image: docker:28-dind
+        - name: podman
+          image: quay.io/podman/stable:v5.8.7
+          command:
+            - podman
+            - system
+            - service
+            - --time=0
+            - unix:///run/podman/podman.sock
           securityContext:
-            # Unavoidable for a Docker daemon: it manages cgroups, mounts overlayfs
-            # and configures network namespaces for the job containers.
-            privileged: true
+            # Not privileged. These three capabilities plus /dev/fuse are what
+            # rootless Podman needs to map users into its namespace and mount
+            # fuse-overlayfs; allowPrivilegeEscalation has to be true for the
+            # setuid helpers that perform the mapping.
+            privileged: false
+            allowPrivilegeEscalation: true
+            runAsUser: 1000
+            capabilities:
+              add: ['SETUID', 'SETGID', 'SYS_CHROOT']
+            # The default profile blocks the namespace and mount syscalls the above
+            # exists to permit.
+            seccompProfile:
+              type: Unconfined
           env:
-            - name: DOCKER_TLS_CERTDIR
-              value: /certs
+            # The kernel overlay driver needs privileges Podman does not have here;
+            # the FUSE implementation is the point of mounting /dev/fuse.
+            - name: STORAGE_DRIVER
+              value: overlay
+            - name: _CONTAINERS_USERNS_CONFIGURED
+              value: ''
           volumeMounts:
-            - name: certs
-              mountPath: /certs
-            - name: docker-graph
-              mountPath: /var/lib/docker
+            - name: podman-socket
+              mountPath: /run/podman
+            - name: podman-storage
+              mountPath: /home/podman/.local/share/containers
+            - name: fuse
+              mountPath: /dev/fuse
           # This limit is the ceiling for every job container at once -- they are
-          # children of this daemon and live in its cgroup. A build that exceeds it
+          # children of this service and live in its cgroup. A build that exceeds it
           # is killed here, and the node is untouched.
           resources:
             requests:
@@ -232,11 +257,6 @@ spec:
               memory: 128Mi
             limits:
               memory: 8Gi
-          livenessProbe:
-            exec:
-              command: ['docker', 'info']
-            initialDelaySeconds: 30
-            periodSeconds: 30
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -244,16 +264,18 @@ spec:
         - name: config
           configMap:
             name: forgejo-runner-config
-        # The daemon writes its server certificate here and the runner reads the
-        # matching client certificate.
-        - name: certs
+        - name: podman-socket
           emptyDir:
-            sizeLimit: 64Mi
+            sizeLimit: 8Mi
         # Pulled images and build layers. Empty until something is built, and
         # bounded so a runaway build cannot fill the node's root filesystem.
-        - name: docker-graph
+        - name: podman-storage
           emptyDir:
             sizeLimit: 20Gi
+        - name: fuse
+          hostPath:
+            path: /dev/fuse
+            type: CharDevice
         - name: home-ca
           secret:
             secretName: forgejo-runner-ca
