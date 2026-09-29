@@ -1,0 +1,572 @@
+# A dashboard built against the metric names this cluster actually exposes.
+#
+# The ready-made Knative dashboards do not work here: they were written for the old
+# names -- autoscaler_*, activator_*, revision_app_request_count -- and 1.23 emits
+# kn_* instead, after the move to OpenTelemetry. Every expression below was checked
+# against the live Prometheus rather than copied.
+#
+# Picked up by the grafana_dashboard sidecar, which watches every namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-knative
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    grafana_folder: Knative
+data:
+  knative-serving.json: |
+    {
+      "uid": "knative-serving",
+      "title": "Knative Serving",
+      "tags": [
+        "knative",
+        "serverless"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": {
+        "from": "now-3h",
+        "to": "now"
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "namespace",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "includeAll": true,
+            "allValue": ".*",
+            "current": {
+              "text": "All",
+              "value": "$__all"
+            },
+            "multi": true,
+            "query": {
+              "query": "label_values(kn_revision_pods_count, k8s_namespace_name)",
+              "refId": "n"
+            },
+            "refresh": 2,
+            "label": "Namespace"
+          },
+          {
+            "name": "service",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "includeAll": true,
+            "allValue": ".*",
+            "current": {
+              "text": "All",
+              "value": "$__all"
+            },
+            "multi": true,
+            "query": {
+              "query": "label_values(kn_revision_pods_count{k8s_namespace_name=~\"$namespace\"}, kn_service_name)",
+              "refId": "s"
+            },
+            "refresh": 2,
+            "label": "Dienst"
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Laufende Pods je Dienst",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (k8s_namespace_name, kn_service_name) (kn_revision_pods_count{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"})",
+              "legendFormat": "{{k8s_namespace_name}}/{{kn_service_name}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "Null bedeutet: der Dienst schlaeft. Genau dafuer ist Knative da."
+        },
+        {
+          "id": 2,
+          "title": "Gewuenscht gegen laufend",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (kn_service_name) (kn_revision_pods_desired{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"})",
+              "legendFormat": "gewuenscht {{kn_service_name}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (kn_service_name) (kn_revision_pods_count{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"})",
+              "legendFormat": "laufend {{kn_service_name}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (kn_service_name) (kn_revision_pods_pending_count{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"})",
+              "legendFormat": "wartend {{kn_service_name}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "Klafft das auseinander, kommt der Cluster mit dem Hochfahren nicht nach."
+        },
+        {
+          "id": 3,
+          "title": "Anfragen je Sekunde",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 8,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (kn_service_name) (rate(kn_serving_invocation_duration_seconds_count{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"}[5m]))",
+              "legendFormat": "{{kn_service_name}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "Antwortzeit",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 8,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "histogram_quantile(0.50, sum by (le, kn_service_name) (rate(kn_serving_invocation_duration_seconds_bucket{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"}[5m])))",
+              "legendFormat": "p50 {{kn_service_name}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le, kn_service_name) (rate(kn_serving_invocation_duration_seconds_bucket{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"}[5m])))",
+              "legendFormat": "p95 {{kn_service_name}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "histogram_quantile(0.99, sum by (le, kn_service_name) (rate(kn_serving_invocation_duration_seconds_bucket{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"}[5m])))",
+              "legendFormat": "p99 {{kn_service_name}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {},
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "Enthaelt den Kaltstart: der erste Aufruf nach dem Einschlafen zieht p99 nach oben."
+        },
+        {
+          "id": 5,
+          "title": "Antworten nach Status",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 16,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (http_response_status_code) (rate(kn_serving_invocation_duration_seconds_count{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"}[5m]))",
+              "legendFormat": "{{http_response_status_code}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "stacking": {
+                  "mode": "normal"
+                }
+              },
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          }
+        },
+        {
+          "id": 6,
+          "title": "Nebenlaeufigkeit gegen Ziel",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 16,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (kn_service_name) (kn_revision_concurrency_stable{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"})",
+              "legendFormat": "gemessen {{kn_service_name}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (kn_service_name) (kn_revision_concurrency_target{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"})",
+              "legendFormat": "ziel {{kn_service_name}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (kn_service_name) (kn_revision_concurrency_panic{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"})",
+              "legendFormat": "panik-fenster {{kn_service_name}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "Ueberschreitet gemessen das Ziel, skaliert der Autoscaler hoch."
+        },
+        {
+          "id": 7,
+          "title": "Aktiv und in der Warteschlange",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 24,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (kn_service_name) (kn_revision_request_active{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"})",
+              "legendFormat": "aktiv {{kn_service_name}}",
+              "refId": "A"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (kn_service_name) (kn_revision_request_queued{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"})",
+              "legendFormat": "wartend {{kn_service_name}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "Wartende Anfragen bedeuten, dass der Activator puffert, weil noch kein Pod bereit ist."
+        },
+        {
+          "id": 8,
+          "title": "Panik-Modus",
+          "type": "stat",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 24,
+            "w": 6,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (kn_service_name) (kn_revision_panic_mode{k8s_namespace_name=~\"$namespace\", kn_service_name=~\"$service\"})",
+              "legendFormat": "{{kn_service_name}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "colorMode": "value"
+          },
+          "description": "1 heisst: der Autoscaler hat einen Lastsprung gesehen und skaliert aggressiv."
+        },
+        {
+          "id": 9,
+          "title": "Arbeitsschlangen der Steuerungsebene",
+          "type": "timeseries",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 24,
+            "w": 6,
+            "h": 8
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (job) (kn_workqueue_depth)",
+              "legendFormat": "{{job}}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {}
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "Waechst das dauerhaft, kommt ein Controller nicht hinterher."
+        }
+      ]
+    }

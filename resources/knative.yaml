@@ -168,3 +168,14 @@ spec:
   podMetricsEndpoints:
     - port: http-usermetric
       interval: 30s
+      # The queue-proxy's own metrics carry only namespace and pod -- no service or
+      # revision -- so a request rate could not be broken down per Knative service.
+      # The pod labels have both; copying them in under the same names the
+      # autoscaler uses makes the two sets joinable.
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_serving_knative_dev_service]
+          targetLabel: kn_service_name
+        - sourceLabels: [__meta_kubernetes_pod_label_serving_knative_dev_revision]
+          targetLabel: kn_revision_name
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: k8s_namespace_name
