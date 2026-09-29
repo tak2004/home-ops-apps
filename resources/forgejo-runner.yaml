@@ -1,0 +1,285 @@
+# A Forgejo Actions runner, in the shape GitLab's docker executor has: the runner
+# reads the image named in the workflow and starts a container per job.
+#
+# That needs a Docker API, and this cluster runs containerd -- whose socket speaks a
+# different protocol -- so the daemon comes as a sidecar. Docker-in-Docker needs
+# privileged: true. There is no honest way around it: rootless dind still wants
+# CAP_SYS_ADMIN with unconfined seccomp and AppArmor, which buys little over the
+# privileged flag it replaces. The alternative, act_runner's host executor, avoids the
+# privilege by running every job directly inside the runner container, where a
+# workflow can read the registration token and any mounted secret -- worse, not
+# better.
+#
+# On the resource model, which is the point of this deployment:
+#
+#   Requests and limits are both set on purpose. Specifying only a limit makes
+#   Kubernetes copy it into the request, which would reserve the maximum around the
+#   clock -- the opposite of what is wanted. With both set the pod is Burstable: it
+#   holds a small reservation while idle and may grow to the limit under load.
+#
+#   A container that reaches its memory limit is killed by its own cgroup, not by the
+#   node. The host is safe because the limit exists; the danger is a pod without one.
+#   Job containers are children of the dind daemon and share its cgroup, so the limit
+#   on that sidecar is the ceiling for every job at once, however many run.
+#
+#   Disk is bounded the same way. The image store is an emptyDir with a sizeLimit, so
+#   it occupies nothing until a build pulls something and the kubelet evicts the pod
+#   rather than filling the node's root filesystem. Only the registration state is on
+#   a claim, and only because losing it on every restart would leave a trail of dead
+#   runners registered in Forgejo.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: forgejo-runner
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+---
+# Issued by Forgejo itself with
+#
+#   forgejo forgejo-cli actions generate-runner-token
+#
+# and used once, by the init container. After registration the runner
+# authenticates with what it wrote to its claim, so revoking this token does not
+# disconnect an already registered runner.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: forgejo-runner-token
+  namespace: forgejo-runner
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    token: AgBagyGG8rPw4D35uAu7edeinCUXX3BVJXar/Y2jHbiJiq+bF1bgRcA/+FyfrK+gFo+3hVME5zrc+8FoMwEWyAbTGGaAby+ILgHejI2SUmX+oZ0lt2WMfJ/92gdMYqgD7w13+QafneJ+pfakCRkEh36VxU39t5kV3brEcw8PK1M7wLhTTwescfPEDnYxEHXZZxpHfSxVWNHBXqAy4s2YrxCMJtzSD8yMXAh4NV/V/BebEc8BkcQo8bkD/AWK5GgdNjwzCOd03QtyXEcGJU2zNI7s7onqownRZc3y3sSUVqKmhz+S1gm6pN1dAW9j2y4epoWPrRMbdgutSXopMEN3CPhFiVJqlcckXeoGilvAAx20QHjljtw8vKfIjZHv/jxI4B45JfhiEThBoJBnT9xlKmnbTGt0pP+e799ApTWaLKXLTlucndl0uEdm16lDTXpxjF/XtC5G5u63LiqIceF5Xq403qrXJPI2YKD0pzEXjzFnOZttan+VdP9wCmkPAwwDP+WreWnaN61NUah4hTCn88kq5REhNRQgFG1niwiH+EWwJA6KXSumrXnBtJSNi585JJT5vzccPQzwfLdWfSB5+DfOhi5HCFXoIxjMDLvyW1kflC35TOFTsAYNdvvDl0PWhc+Fd7FghRPc9pUXmcjzE6fcewrivfSdeQ1PNS7yP/KVCJrjVAdIekrVclPSY/JErLqT09TtgtEnrjile2B3T04dhJwcYhiN9hs/NhQk85VCN5da9VpzsXYfmBHO
+  template:
+    metadata:
+      name: forgejo-runner-token
+      namespace: forgejo-runner
+    type: Opaque
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: forgejo-runner-config
+  namespace: forgejo-runner
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+data:
+  config.yaml: |
+    log:
+      level: info
+    runner:
+      # Two jobs at a time. They share the dind sidecar's memory limit, so this is
+      # the number to lower if builds start being killed rather than the limit to
+      # raise.
+      capacity: 2
+      timeout: 1h
+      # What a workflow may ask for in runs-on. The part after the colon is the
+      # image the job runs in, exactly as GitLab resolves image:.
+      labels:
+        - 'docker:docker://node:22-bookworm'
+        - 'ubuntu-latest:docker://node:22-bookworm'
+        - 'ubuntu-22.04:docker://node:22-bookworm'
+    cache:
+      enabled: true
+      dir: /data/cache
+    container:
+      # The job containers attach to the network the dind daemon manages.
+      network: bridge
+      privileged: false
+      options: ''
+      # Where the repository is checked out inside the job container.
+      workdir_parent: workspace
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: forgejo-runner-data
+  namespace: forgejo-runner
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  # Small and replicated: this holds the .runner registration file, nothing else.
+  # Without it every restart registers anew and Forgejo collects dead runners.
+  storageClassName: linstor-replicated
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: forgejo-runner
+  namespace: forgejo-runner
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 1
+  # One claim, ReadWriteOnce: the old pod has to release it before the new one
+  # starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: forgejo-runner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: forgejo-runner
+    spec:
+      nodeSelector:
+        node-role.kubernetes.io/storage-disk: ""
+      initContainers:
+        # Registration writes .runner next to the config. It is skipped when the
+        # file is already there, so a restart does not produce a second runner.
+        - name: register
+          image: code.forgejo.org/forgejo/runner:13.2.0
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              if [ -f /data/.runner ]; then
+                echo "bereits registriert, nichts zu tun"
+                exit 0
+              fi
+              forgejo-runner register --no-interactive \
+                --instance https://forgejo.svc.home \
+                --token "$RUNNER_TOKEN" \
+                --name "$(hostname)" \
+                --labels docker:docker://node:22-bookworm
+          workingDir: /data
+          env:
+            - name: RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-runner-token
+                  key: token
+            # Registration talks to Forgejo over HTTPS and has to trust the private
+            # CA. Both directories, because Go reads SSL_CERT_DIR instead of its
+            # defaults rather than in addition to them.
+            - name: SSL_CERT_DIR
+              value: /etc/ssl/certs:/etc/ssl/home-ca
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: home-ca
+              mountPath: /etc/ssl/home-ca
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      containers:
+        - name: runner
+          image: code.forgejo.org/forgejo/runner:13.2.0
+          command: ['forgejo-runner', 'daemon', '--config', '/config/config.yaml']
+          workingDir: /data
+          env:
+            # The sidecar below, over TLS on the loopback they share.
+            - name: DOCKER_HOST
+              value: tcp://localhost:2376
+            - name: DOCKER_CERT_PATH
+              value: /certs/client
+            - name: DOCKER_TLS_VERIFY
+              value: '1'
+            - name: SSL_CERT_DIR
+              value: /etc/ssl/certs:/etc/ssl/home-ca
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: certs
+              mountPath: /certs
+            - name: home-ca
+              mountPath: /etc/ssl/home-ca
+              readOnly: true
+          # The runner itself only orchestrates; the work happens in the sidecar's
+          # containers, which is why this limit is small.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 512Mi
+        - name: dind
+          image: docker:28-dind
+          securityContext:
+            # Unavoidable for a Docker daemon: it manages cgroups, mounts overlayfs
+            # and configures network namespaces for the job containers.
+            privileged: true
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: /certs
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+            - name: docker-graph
+              mountPath: /var/lib/docker
+          # This limit is the ceiling for every job container at once -- they are
+          # children of this daemon and live in its cgroup. A build that exceeds it
+          # is killed here, and the node is untouched.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 8Gi
+          livenessProbe:
+            exec:
+              command: ['docker', 'info']
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: forgejo-runner-data
+        - name: config
+          configMap:
+            name: forgejo-runner-config
+        # The daemon writes its server certificate here and the runner reads the
+        # matching client certificate.
+        - name: certs
+          emptyDir:
+            sizeLimit: 64Mi
+        # Pulled images and build layers. Empty until something is built, and
+        # bounded so a runaway build cannot fill the node's root filesystem.
+        - name: docker-graph
+          emptyDir:
+            sizeLimit: 20Gi
+        - name: home-ca
+          secret:
+            secretName: forgejo-runner-ca
+            items:
+              - key: ca.crt
+                path: ca.crt
+---
+# Materialises ca.crt in this namespace. cert-manager puts the issuing CA beside
+# every certificate it signs, so a certificate nobody serves is the cheapest way to
+# obtain it -- copying the secret from cert-manager's namespace would also copy the
+# CA's private key.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: forgejo-runner-ca
+  namespace: forgejo-runner
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  secretName: forgejo-runner-ca
+  commonName: forgejo-runner.internal
+  duration: 87600h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: home-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
