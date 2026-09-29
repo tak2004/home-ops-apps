@@ -20,6 +20,14 @@ spec:
         # Headlamp plugin is the way to see Services, Revisions and routes in a
         # browser. The sidecar installs it at startup and watches the config, so a
         # version change here does not need a pod restart.
+        config:
+          # The plugin manager writes into the plugin directory while Headlamp is
+          # already starting, and Headlamp otherwise reads that directory once at
+          # startup. Measured: the container came up at 20:47:18, the plugin landed
+          # the same minute, and the server's /plugins endpoint listed only the
+          # bundled one. Watching the directory removes the race instead of papering
+          # over it with a restart.
+          watchPlugins: true
         pluginsManager:
           enabled: true
           configContent: |
