@@ -20,7 +20,62 @@ spec:
         # Headlamp plugin is the way to see Services, Revisions and routes in a
         # browser. The sidecar installs it at startup and watches the config, so a
         # version change here does not need a pod restart.
+        # Headlamp fetches Authelia's discovery document and exchanges the code
+        # itself, so it has to trust the private CA. Dropping the certificate into
+        # /etc/ssl/certs is not enough: Go reads that directory only when it finds no
+        # bundle file, and the image has one. The chart exposes no way to set
+        # SSL_CERT_DIR either, so the bundle is rebuilt -- system plus this CA -- and
+        # mounted over the original as a single file.
+        initContainers:
+          - name: ca-bundle
+            image: docker.io/alpine:3.21
+            command:
+              - sh
+              - -c
+              - cat /etc/ssl/certs/ca-certificates.crt /home-ca/ca.crt > /bundle/ca-certificates.crt
+            volumeMounts:
+              - name: ca-bundle
+                mountPath: /bundle
+              - name: home-ca
+                mountPath: /home-ca
+                readOnly: true
+            resources:
+              requests:
+                cpu: 10m
+                memory: 16Mi
+              limits:
+                memory: 64Mi
+        volumes:
+          - name: ca-bundle
+            emptyDir:
+              sizeLimit: 8Mi
+          - name: home-ca
+            secret:
+              secretName: headlamp-ca
+              items:
+                - key: ca.crt
+                  path: ca.crt
+        volumeMounts:
+          - name: ca-bundle
+            mountPath: /etc/ssl/certs/ca-certificates.crt
+            subPath: ca-certificates.crt
+            readOnly: true
         config:
+          oidc:
+            # The client id here has to be the one the apiserver checks as the
+            # token's audience, which is why it is called kubernetes rather than
+            # headlamp: Headlamp only carries the token, the apiserver decides.
+            secret:
+              create: false
+            externalSecret:
+              enabled: true
+              name: headlamp-oidc
+              # The scopes live in that secret too. With this false the chart omits
+              # -oidc-scopes entirely, and the groups claim -- which is the whole
+              # point -- would never be requested.
+              hasScopes: true
+            callbackURL: https://headlamp.svc.home/oidc-callback
+            usePKCE: true
           # The plugin manager writes into the plugin directory while Headlamp is
           # already starting, and Headlamp otherwise reads that directory once at
           # startup. Measured: the container came up at 20:47:18, the plugin landed
@@ -70,3 +125,44 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+
+---
+# Materialises ca.crt in this namespace. cert-manager places the issuing CA beside
+# everything it signs, so a certificate nobody serves is the cheapest way to obtain
+# it -- copying cert-manager's own secret would copy the CA's private key too.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: headlamp-ca
+  namespace: headlamp
+spec:
+  secretName: headlamp-ca
+  commonName: headlamp.internal
+  duration: 87600h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: home-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# Who may do what once the apiserver accepts an Authelia token. The oidc: prefix is
+# not decoration -- it matches --oidc-groups-prefix on the apiserver and keeps these
+# names from colliding with Kubernetes' own groups, where a group called admins
+# could otherwise be asserted by anything that can mint a token.
+#
+# Membership is decided in LLDAP and evaluated at every login, so access is
+# withdrawn by removing someone from the group rather than by editing this.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-admins
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: oidc:admins

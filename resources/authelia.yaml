@@ -152,6 +152,29 @@ spec:
     type: Opaque
 
 ---
+# Headlamp's half of the kubernetes client. The key names are the chart's:
+# config.oidc.externalSecret expects OIDC_CLIENT_ID, OIDC_CLIENT_SECRET and
+# OIDC_ISSUER_URL, and passes them through as command-line arguments.
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: headlamp-oidc
+  namespace: headlamp
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  encryptedData:
+    OIDC_CLIENT_ID: AgCwqzTCgvHsc079HldCJUpwu4jgdDZWMTaouAPGQTwyNgyH03HQmpnN7c/389jVRF3siZGEMnGWJE0acEHA+ArjBQFsakFn3LtDUw6xQA9wEnwAj5QwmdzP1TyDu+xr/2xfRrM1FduvLeS14qLivkOfb2qmQrAiqboi0sDVN3RkboYN9alEzmC9cgVtrrZnkyIsiBD6Q9oev2Nch/SDbpchlBg49rC0wWcEa9VqkoFNElJkO6cwBBtb8jKnMD3IV0QDA8T+lpTgNz9bmq+fNLx3sxjcpGZoq3AeNUBPa69eugrndiRJI2HR9g82wyEe5wN3pFEcyhyr3KFig5IuMFr9JTrQ8baf2uSorqiXEjv9QR75OgvLtLvgsdVN38QXBTDvnvIx2aWGlPVEHMUiUNRReePq1mqzrpQNzcqkKeKMLSR5xAxLSqYlxJktbex42OCLleCDlmIxXgcbe43Y3ubI1HxImABBuAKa+a6Mghc0YDeN2OnmSx6HOU69jKDZ24HxJprkS4Aeznf1XnS6CUluLO4Y270RMPk8MsN3s0sz9jWLM4L25Pme7z5fXbdgtCqowU4BnKsGOhODgB5JCbCRBHWQhT7jREsqipO+OpOdhCBNe9EHs3jkfreI4qtj81R2FZjVON857GDXHAh4nqqYxLLQfHJQ/TDmahvCFFE/my/UPsDYnYlilFfitmJ0H31pNPyqftmfsSCc
+    OIDC_CLIENT_SECRET: AgBzI0rxAgxNObWKLPZmfmeQTn+ObwuQgkoMT/UN5xu5/akrEJdQuDMSmGRk4kdJBzvPabKeWhxN2OZknxwRfVvOXhL2jHTbn9gBwOTBrMT0LmCyh9ZnVkY6m2hyjU2bzGhtsxXc1UG/sp57xc/YGYcioFLqPjzNFth10lpwmOaWvSUqF5lLpU31EqKiq76G6zlqOXWAnL4IHj595zCr/bkPNqz8VesdKCsfPg7QIu9Ud4nBol5J4zsrrU+2wN6db/laqWHmmJ47Ekrb9NpcA9bldZa3f7BSHb3F4yw7f8/Wghv+hfyZU8Q1uvrvgGQ18HWLaWgFrdPUl4FQMeCizjh6xBCPR9tOtSexyNEtbBjguAf3m7WK6fPm9HiwAxPpPOE2T0Q3ITcGvnsWgJQKk6k3+QtEp5vvsoLJrhS2eCKidIRyUJilrsYLWuGvuiqdqohLc1/O4CT/DdpfFhC3K3+BvdE3RLGpx83J1vJ8o8B1lF3qihrxii0CF2kQz3CMb0PgDebSVgK7BV5Eu5Vxn/U76cxC4ZNVh3aBwucTPtfWlA4rfzK4at7133x7C5XcmQt4p5+U5oUEUMBeGbp7Yz7BWgLKuZ6FzI43fNF1cV5yuP3Ayop/3EME4KSg/3hQT5NUNK2fndvOIzpeDlxdkUL9aIYWHs4EWwiaU60SRkRaPLriiJMTufaErOXUzjEwXEmSh8ZMUk/nMlnjnTgzz2Pbydhif6ySmh47Tn8QsUi6yjGlcKzRAejVgj9IXwSpiVMlHZTuRrlAXZ2MPwweI8tM1z75/L8Z3gY=
+    OIDC_ISSUER_URL: AgDWY2Ww470vcuMj6M7e7rhKIZw5yM10q//haOps1Iv/zqOQpsmm2nfTGondK9ah7tVOLWT3ZG+gkJN76VyISbdyXgK887AGENvDVHNqqj/ahKLWAYzamoYAsMc0PHAZ9EDv17aGtPEituay2U87cAFTe1aRJKV8Q2rFTrScVnu/4hYoRmdKvGn5CRIvHI0bXT+IEy2OGJ/mmlgSmoc31ejoksPmM6pPEOEsVur9mNDI9dEAQJB5SF9bNmtFWpBjFhoc4HC1xlbusEsdNKk6QAJCkOL2H+j6w61nowikqAzn4xZ8Gpj0jTDLmBAsaD6DFWZYN49phqQ96zvMFmLZRoAsAn8kkC6uoJQER/rKEigdj+uJWb9c1s/Y8PNm2AVCqtJw+4kJW6gFP+pRAPn0zRrN+QObJvkhhQ2r3k3FmWBC1PQ38KPaC/tckcLkd5yWyaQtXJEb7hE0YKEs+/nR0bhRsKs12KpRvpSpHbzdVgG0F2q8t11Mb+V70CyR4qzcAL2v/zk6vs0a0GMfOs7v0EmdpfS1pMVsYK1QqExHCNpp6LRJffoDlyHO+0JLOlIZZELm8sPyQQF+A3h98RfRrabbdTwbODg4yt0/M7xM1Oo7digKfUeHTumBsAhznNxHfhn759/PLbhyi+zTQToKkddIz1USNVkD7kQkM75zcDq6+dKnBQgpi+tpZo4wQz828HT7R0dayPQFJXKdlVxuh331fomzdtA=
+    OIDC_SCOPES: AgC2rmnRt0WllIC7unR98gSi8XmTladEqj1qw2sIwNFjVtp142C2sxEnY6uffeXc9p5k8p6YlggEZQPpkgpdxGkwbWYByYhB5JgIbOANSJVTD26fswXMhcXyv3oYOOMy04L337AS5rOK63VlJ30KY0LRTAazpH4zqLFIGX6zrzV3dT1f15b6C7EMt2X991hRBDXeop5lumSY5xabr2muq5Jg38hG49t0lIaCAg1w+Os3/0KEXrOSr5SVrqg0Un694DIribAZ/9NNoFQI1Koe8eF2DPUDA+BviwmmM54qgdd3BJ5X2fmozGhhi5hOyVPnlWBD1iYzoFhhgeMBHQX6nBzz+CH0Lll7SBumZ+gzCmIoDmc4xR/LjQCy/7sBTp9SebqKSK8LiQHod9Bx6GirMnCrZy6Ws3KdXSu4Lt6az74WvA3LEm86RknkEMxZ44scfCs+QBAoplJaFSm2m5cULPhGWHoXtjFN29VFzBDy7ONOTgp6hyAh5dCF8WGtVXBsa3MLhhiGckd431/9wYtf/cShFtWjrydkzB74KuKGMQMHv809I/GtYAXVYL4iogK4SGU1nGxJPwR0I8ynUsckB8+t7uNDyG31wx7XMON1mEwOWTto9p4SzBdV9Znv1BLbCSwjZSRhJc7VJC4/IknqXPO4ggBN0pGDxZM8vZH5616tVHnAPsbJzJCXco3uGcpc5zchkut9hmKVIppvaYxf+XBDVRi0VAGslCckwN4=
+  template:
+    metadata:
+      name: headlamp-oidc
+      namespace: headlamp
+    type: Opaque
+
+---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -288,6 +311,20 @@ spec:
                     - https://argocd.svc.home/auth/callback
                     # The CLI opens a local listener and sends the browser back to it.
                     - http://localhost:8085/auth/callback
+                  scopes: ['openid', 'profile', 'email', 'groups']
+                  userinfo_signed_response_alg: none
+                # Named kubernetes, not headlamp: this client id has to match the
+                # apiserver's --oidc-client-id, because the apiserver checks it as the
+                # token's audience. Headlamp merely carries the token there.
+                - client_id: kubernetes
+                  client_name: Kubernetes
+                  client_secret: '$pbkdf2-sha512$310000$RyQuJ.FUB9a1pfQ0InZY7A$uZOB.T3qW9798/fCMTn.HSHZnXfN0oPu9PaMKe72VDhpv4E47u9VIqD5qp.HjFoUWl.hbigaxB7UEagKZvZi7g'
+                  public: false
+                  authorization_policy: one_factor
+                  require_pkce: true
+                  pkce_challenge_method: S256
+                  redirect_uris:
+                    - https://headlamp.svc.home/oidc-callback
                   scopes: ['openid', 'profile', 'email', 'groups']
                   userinfo_signed_response_alg: none
   destination:
