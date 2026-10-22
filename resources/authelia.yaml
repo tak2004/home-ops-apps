@@ -195,6 +195,11 @@ spec:
         pod:
           kind: Deployment
           replicas: 1
+          # Recreate, not the chart's RollingUpdate: the PVC is RWO, so the new pod
+          # cannot attach while the old one holds it on another node -- every config
+          # change hung in Multi-Attach until the old pod was deleted by hand.
+          strategy:
+            type: Recreate
           selectors:
             nodeSelector:
               node-role.kubernetes.io/storage-disk: ""
