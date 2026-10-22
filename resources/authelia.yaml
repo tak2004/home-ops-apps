@@ -271,6 +271,9 @@ spec:
                   use: sig
                   key:
                     path: /secrets/oidc/oidc.jwk.RS256.pem
+              # consent_mode implicit on every client: the chart defaults to 'auto', which
+              # without a pre_configured_consent_duration means 'explicit' -- a consent page
+              # on every single login. All clients here are our own apps, nothing to consent to.
               clients:
                 - client_id: forgejo
                   client_name: Forgejo
@@ -288,6 +291,7 @@ spec:
                     - https://forgejo.svc.home/user/oauth2/authelia/callback
                   scopes: ['openid', 'profile', 'email', 'groups']
                   userinfo_signed_response_alg: none
+                  consent_mode: implicit
                 - client_id: grafana
                   client_name: Grafana
                   client_secret: '$pbkdf2-sha512$310000$AhO2DFd.IaVbW82JyOGGYA$JoD1E7SE15qhhh.C8sqkJcrKd4OQ7riZ6dhHiq/itqyHtFUFchCLXU.rrfbYZ9FZU6b1md5jPVue5OIrZFMskg'
@@ -299,6 +303,7 @@ spec:
                     - https://grafana.svc.home/login/generic_oauth
                   scopes: ['openid', 'profile', 'email', 'groups']
                   userinfo_signed_response_alg: none
+                  consent_mode: implicit
                 - client_id: argocd
                   client_name: Argo CD
                   client_secret: '$pbkdf2-sha512$310000$KrAGMfuryvIMPlO2EFQQjg$m3rzXOgVyvysV9FbKy8WnCKfRYTQtYZK4hA2s/ryhL38.4NhF5jJFGx0ZN1oNZY0iB/fxmsVRgRUCXfpApYRgw'
@@ -313,6 +318,7 @@ spec:
                     - http://localhost:8085/auth/callback
                   scopes: ['openid', 'profile', 'email', 'groups']
                   userinfo_signed_response_alg: none
+                  consent_mode: implicit
                 # Named kubernetes, not headlamp: this client id has to match the
                 # apiserver's --oidc-client-id, because the apiserver checks it as the
                 # token's audience. Headlamp merely carries the token there.
@@ -327,6 +333,7 @@ spec:
                     - https://headlamp.svc.home/oidc-callback
                   scopes: ['openid', 'profile', 'email', 'groups']
                   userinfo_signed_response_alg: none
+                  consent_mode: implicit
   destination:
     server: "https://kubernetes.default.svc"
     namespace: authelia
