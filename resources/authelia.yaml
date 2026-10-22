@@ -276,6 +276,12 @@ spec:
                   use: sig
                   key:
                     path: /secrets/oidc/oidc.jwk.RS256.pem
+              # Since 4.39 Authelia puts groups only into userinfo, not the ID token. Argo
+              # reads groups from the ID token alone, so without this every login matched
+              # no policy.csv line and saw an empty UI.
+              claims_policies:
+                id_token_groups:
+                  id_token: ['groups', 'email', 'preferred_username', 'name']
               # consent_mode implicit on every client: the chart defaults to 'auto', which
               # without a pre_configured_consent_duration means 'explicit' -- a consent page
               # on every single login. All clients here are our own apps, nothing to consent to.
@@ -311,6 +317,7 @@ spec:
                   consent_mode: implicit
                 - client_id: argocd
                   client_name: Argo CD
+                  claims_policy: id_token_groups
                   client_secret: '$pbkdf2-sha512$310000$KrAGMfuryvIMPlO2EFQQjg$m3rzXOgVyvysV9FbKy8WnCKfRYTQtYZK4hA2s/ryhL38.4NhF5jJFGx0ZN1oNZY0iB/fxmsVRgRUCXfpApYRgw'
                   public: false
                   authorization_policy: one_factor
