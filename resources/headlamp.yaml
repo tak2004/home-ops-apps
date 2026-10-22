@@ -60,6 +60,16 @@ spec:
             mountPath: /etc/ssl/certs/ca-certificates.crt
             subPath: ca-certificates.crt
             readOnly: true
+        # Here and not as config.oidc.callbackURL/usePKCE: with externalSecret the chart
+        # still passes -oidc-use-pkce=$(OIDC_USE_PKCE) and -oidc-callback-url=..., but
+        # takes the variables from keys our secret does not have. The pod crashed for
+        # 14 days on 'invalid boolean value "$(OIDC_USE_PKCE)"'. Values set in env are
+        # what the chart's own lookup expects.
+        env:
+          - name: OIDC_CALLBACK_URL
+            value: https://headlamp.svc.home/oidc-callback
+          - name: OIDC_USE_PKCE
+            value: "true"
         config:
           oidc:
             # The client id here has to be the one the apiserver checks as the
@@ -74,8 +84,6 @@ spec:
               # -oidc-scopes entirely, and the groups claim -- which is the whole
               # point -- would never be requested.
               hasScopes: true
-            callbackURL: https://headlamp.svc.home/oidc-callback
-            usePKCE: true
           # The plugin manager writes into the plugin directory while Headlamp is
           # already starting, and Headlamp otherwise reads that directory once at
           # startup. Measured: the container came up at 20:47:18, the plugin landed

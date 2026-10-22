@@ -336,6 +336,8 @@ spec:
                 # token's audience. Headlamp merely carries the token there.
                 - client_id: kubernetes
                   client_name: Kubernetes
+                  # The apiserver reads groups and preferred_username from the ID token.
+                  claims_policy: id_token_groups
                   client_secret: '$pbkdf2-sha512$310000$RyQuJ.FUB9a1pfQ0InZY7A$uZOB.T3qW9798/fCMTn.HSHZnXfN0oPu9PaMKe72VDhpv4E47u9VIqD5qp.HjFoUWl.hbigaxB7UEagKZvZi7g'
                   public: false
                   authorization_policy: one_factor
